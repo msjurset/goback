@@ -1,0 +1,50 @@
+#compdef markback
+
+# Zsh completion script for markback
+# Install: cp _markback ~/.oh-my-zsh/custom/completions/
+
+_markback() {
+    local -a commands
+    commands=(
+        'auth:Resolve op:// secrets and cache in system keychain'
+        'init:Create default config file'
+        'daemon:Run the backup scheduler (foreground)'
+        'run:Manually trigger one or all backups'
+        'now:Run all backups immediately'
+        'dry-run:Simulate backups (connect but don'\''t transfer)'
+        'list:Show configured backup jobs'
+        'status:Show recent backup history'
+        'version:Print version information'
+        'help:Show usage information'
+    )
+
+    _arguments -C \
+        '1:command:->command' \
+        '*::arg:->args'
+
+    case $state in
+        command)
+            _describe -t commands 'markback command' commands
+            ;;
+        args)
+            case $words[1] in
+                run|dry-run)
+                    _markback_backup_names
+                    ;;
+                auth)
+                    _arguments '--clear[Remove cached secrets from keychain]'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_markback_backup_names() {
+    local -a names
+    if [[ -f ~/.config/markback/config.yaml ]]; then
+        names=(${(f)"$(grep '^\s*- name:' ~/.config/markback/config.yaml | sed 's/.*name:\s*//')"})
+    fi
+    _describe -t names 'backup name' names
+}
+
+_markback "$@"

@@ -1,0 +1,238 @@
+.TH MARKBACK 1 "March 2026" "version 1.0.0" "User Commands"
+.SH NAME
+markback \- scheduled pull-based backup manager for home network services
+.SH SYNOPSIS
+.B markback
+.I command
+[\fIargs\fR]
+.SH DESCRIPTION
+.B markback
+is a backup daemon and CLI for pulling backups from home network services.
+It supports two backup providers: Home Assistant API backups (WebSocket-based
+listing/downloading, REST for triggering, signed URLs for download) and SSH/SCP
+file transfers. Backups are scheduled via cron expressions and managed with
+configurable retention policies.
+.PP
+The daemon runs as a macOS launchd service. Secrets (API tokens, SSH keys)
+stored as
+.B op://
+references are resolved via the 1Password CLI and cached in the platform
+keychain (macOS Keychain, Linux secret-tool, Windows cmdkey) using the
+.B auth
+command, so the daemon runs without requiring 1Password to be unlocked.
+SSH configuration is read from
+.I ~/.ssh/config
+for Host aliases, Hostname, Port, User, and IdentityAgent.
+.PP
+Configuration is stored in
+.I ~/.config/markback/config.yaml
+as YAML.
+.SH COMMANDS
+.TP
+.B init
+Create a default configuration file at
+.IR ~/.config/markback/config.yaml .
+Will not overwrite an existing file.
+.TP
+.B auth
+Resolve all
+.B op://
+secret references in the configuration (API tokens, SSH keys) via the
+1Password CLI and cache the resolved values in the platform keychain.
+Run this once after changing secrets, before starting the daemon.
+.TP
+.B auth \-\-clear
+Remove all cached secrets from the platform keychain.
+.TP
+.B daemon
+Run the backup scheduler in the foreground. This is the command invoked
+by launchd. Schedules all configured backups according to their cron
+expressions and runs until interrupted (SIGINT or SIGTERM).
+.TP
+.B run \fR[\fIname\fR]
+Manually trigger a backup. If
+.I name
+is provided, only that backup job runs. Otherwise, all configured jobs run.
+.TP
+.B now
+Run all configured backups immediately, ignoring schedules. Equivalent to
+.BR "markback run" .
+.TP
+.B dry-run \fR[\fIname\fR]
+Simulate backups without transferring files. Connects to each target to
+verify connectivity and configuration. For SSH targets, checks that the
+remote file exists. For HA API targets, verifies authentication and lists
+existing backups on the server. Prints a summary table of results.
+.TP
+.B list
+Display a table of all configured backup jobs showing name, type, folder,
+schedule, and retention count.
+.TP
+.B status
+Show recent backup history from the status log, including timestamps,
+file sizes, and success/failure status. Displays the most recent 20 entries.
+.TP
+.B version\fR, \fB\-v\fR, \fB\-\-version
+Print version information and exit.
+.TP
+.B help\fR, \fB\-h\fR, \fB\-\-help
+Show usage information.
+.SH CONFIGURATION
+The configuration file uses YAML format with two top-level keys:
+.TP
+.B storage.base_dir
+Base directory for all backup files. Supports
+.B ~/
+expansion.
+.TP
+.B storage.log_file
+Path to the application log file. Supports
+.B ~/
+expansion.
+.TP
+.B backups
+A list of backup job definitions. Each job supports these fields:
+.RS
+.TP
+.B name
+Unique identifier for this backup job (required).
+.TP
+.B type
+Provider type:
+.B ha_api
+or
+.B ssh
+(required).
+.TP
+.B schedule
+Cron expression for when to run (required).
+.TP
+.B folder
+Subdirectory within base_dir for this job's files. Defaults to
+.BR name .
+.TP
+.B filename
+Output filename template with Go time format in braces, e.g.
+.BR "pihole_backup_{2006-01-02}.zip" .
+If omitted, uses
+.IR name-YYYYMMDD-HHMMSS.ext .
+.TP
+.B retention
+Number of backup files to keep. Oldest are deleted first. Default: 4.
+.RE
+.PP
+For
+.B ha_api
+type, additionally:
+.RS
+.TP
+.B ha_url
+Home Assistant base URL (required).
+.TP
+.B ha_token
+Long-lived access token. Supports
+.B op://
+references for 1Password CLI resolution (required).
+.RE
+.PP
+For
+.B ssh
+type, additionally:
+.RS
+.TP
+.B host
+SSH hostname or alias (required).
+.TP
+.B user
+SSH username (required).
+.TP
+.B remote_path
+Path to the file to download (required unless
+.B remote_pattern
+is set).
+.TP
+.B remote_pattern
+Glob pattern to find the newest matching file on the remote host (alternative
+to
+.BR remote_path ).
+For example,
+.BR "/home/pi/backups/unbound/unbound-*.tar.gz" .
+.TP
+.B ssh_key
+SSH private key for this backup job. Supports
+.B op://
+references to retrieve keys from 1Password (PKCS#8 format supported).
+If omitted, the SSH agent or
+.I ~/.ssh/config
+IdentityAgent is used.
+.TP
+.B pre_command
+Command to run on the remote host before downloading.
+.TP
+.B post_command
+Command to run on the remote host after downloading.
+.RE
+.SH EXAMPLES
+.TP
+.B markback init
+Create a default configuration file with example backup targets.
+.TP
+.B markback auth
+Resolve 1Password secrets and cache them in the system keychain.
+.TP
+.B markback auth \-\-clear
+Remove all cached secrets from the system keychain.
+.TP
+.B markback dry-run
+Verify connectivity and configuration for all targets without transferring files.
+.TP
+.B markback dry-run pihole
+Test only the pihole backup configuration.
+.TP
+.B markback run pihole
+Manually trigger the pihole backup.
+.TP
+.B markback now
+Run all backups immediately.
+.TP
+.B markback list
+Show all configured backup jobs.
+.TP
+.B markback status
+Show recent backup results.
+.TP
+.B markback version
+Print version information.
+.SH SERVICE MANAGEMENT
+To install as a macOS launchd service:
+.PP
+.RS
+.B launchctl load ~/Library/LaunchAgents/com.markback.daemon.plist
+.RE
+.PP
+To stop the service:
+.PP
+.RS
+.B launchctl unload ~/Library/LaunchAgents/com.markback.daemon.plist
+.RE
+.SH EXIT STATUS
+.TP
+.B 0
+Success.
+.TP
+.B 1
+An error occurred (backup failure, configuration error, or connectivity issue).
+.SH FILES
+.TP
+.I ~/.config/markback/config.yaml
+Configuration file.
+.TP
+.I ~/Library/Logs/markback.log
+Default log file location.
+.TP
+.I ~/Library/LaunchAgents/com.markback.daemon.plist
+launchd service definition.
+.SH AUTHOR
+Mark Sjurseth
+.SH COPYRIGHT
+Copyright (c) 2026. MIT License.
