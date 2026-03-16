@@ -1,4 +1,4 @@
-.TH GOBACK 1 "March 2026" "version 1.0.0" "User Commands"
+.TH GOBACK 1 "March 2026" "version 1.3.0" "User Commands"
 .SH NAME
 goback \- scheduled pull-based backup manager for home network services
 .SH SYNOPSIS
@@ -54,6 +54,13 @@ cached secrets are removed.
 Run the backup scheduler in the foreground. This is the command invoked
 by launchd. Schedules all configured backups according to their cron
 expressions and runs until interrupted (SIGINT or SIGTERM).
+.IP
+On startup and every 5 minutes thereafter, the daemon checks for missed
+backups by comparing each backup's most recent scheduled fire time against
+its last successful run in the status log. This catches backups that were
+missed while the Mac was asleep. Missed backups are run sequentially and
+logged with a \fBcatchup:\fR prefix. Backups that have never run are
+skipped; use \fBgoback run\fR for first-time execution.
 .TP
 .B run \fR[\fIname\fR]
 Manually trigger a backup. If

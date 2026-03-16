@@ -7,6 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/msjurset/goback/internal/catchup"
 	"github.com/msjurset/goback/internal/config"
 	"github.com/msjurset/goback/internal/scheduler"
 	"github.com/msjurset/goback/internal/storage"
@@ -27,6 +28,9 @@ func Run(cfg *config.Config) error {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+
+	checker := catchup.NewChecker(cfg.Backups, store)
+	go checker.Run(ctx)
 
 	<-ctx.Done()
 	log.Println("shutting down...")
