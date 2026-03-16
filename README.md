@@ -99,7 +99,7 @@ backups:
     schedule: "0 6 * * 0"
     folder: homeassistant
     ha_url: http://homeassistant.local:8123
-    ha_token: "op://Private/HA Backup API Key/credential"
+    ha_token: "op://Vault/HomeAssistant/token"
     retention: 4
 
   - name: pihole
@@ -118,7 +118,7 @@ backups:
     folder: unbound
     host: pi-hole
     user: pi
-    ssh_key: "op://Private/Unbound SSH Key/private key"
+    ssh_key: "op://Vault/SSH Key/private key"
     remote_pattern: "/home/pi/backups/unbound/unbound-*.tar.gz"
     retention: 4
 ```

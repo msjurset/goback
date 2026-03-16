@@ -126,7 +126,7 @@ func (p *SSHProvider) connect(cfg config.BackupConfig) (*ssh.Client, error) {
 	port := "22"
 	user := cfg.User
 
-	// Resolve SSH config aliases (e.g., "pi-hole" -> "192.168.86.55")
+	// Resolve SSH config aliases (e.g., host alias -> actual hostname)
 	resolved := resolveSSHConfig(cfg.Host)
 	if resolved != nil {
 		if resolved.Hostname != "" {
