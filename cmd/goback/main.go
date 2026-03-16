@@ -36,6 +36,13 @@ func main() {
 	case "auth":
 		cmdAuth()
 		return
+	case "clear":
+		name := ""
+		if len(os.Args) > 2 {
+			name = os.Args[2]
+		}
+		cmdClear(name)
+		return
 	case "version", "-v", "--version":
 		fmt.Printf("goback %s\n", version)
 		return
@@ -82,6 +89,7 @@ Commands:
   init              Create default config file
   auth              Resolve and cache op:// secrets in system keychain
   auth --clear      Remove cached secrets from system keychain
+  clear [name]      Remove cached secrets from keychain (all if no name given)
   daemon            Run the backup scheduler (foreground)
   run [name]        Manually trigger one or all backups
   now               Run all backups immediately
@@ -190,6 +198,53 @@ func cmdAuth() {
 			log.Printf("error: %s: %v", s.label, err)
 		} else {
 			fmt.Printf("cached %s in system keychain\n", s.label)
+		}
+	}
+}
+
+func cmdClear(name string) {
+	cfg, err := config.LoadRaw(config.DefaultPath())
+	if err != nil {
+		log.Fatalf("loading config: %v", err)
+	}
+
+	type secret struct {
+		key   string
+		label string
+	}
+
+	var secrets []secret
+	for _, b := range cfg.Backups {
+		if name != "" && b.Name != name {
+			continue
+		}
+		if strings.HasPrefix(b.HAToken, "op://") {
+			secrets = append(secrets, secret{
+				key:   "ha_token_" + b.Name,
+				label: b.Name + " (ha_token)",
+			})
+		}
+		if strings.HasPrefix(b.SSHKey, "op://") {
+			secrets = append(secrets, secret{
+				key:   "ssh_key_" + b.Name,
+				label: b.Name + " (ssh_key)",
+			})
+		}
+	}
+
+	if name != "" && len(secrets) == 0 {
+		log.Fatalf("no backup named %q with op:// secrets found in config", name)
+	}
+	if len(secrets) == 0 {
+		fmt.Println("no op:// secrets found in config")
+		return
+	}
+
+	for _, s := range secrets {
+		if err := credentials.Delete(s.key); err != nil {
+			log.Printf("error clearing %s: %v", s.label, err)
+		} else {
+			fmt.Printf("cleared %s from keychain\n", s.label)
 		}
 	}
 }

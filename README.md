@@ -39,6 +39,7 @@ goback <command> [args]
 | `init` | Create default config file at `~/.config/goback/config.yaml` |
 | `auth` | Resolve `op://` secrets and cache them in the platform keychain |
 | `auth --clear` | Remove cached secrets from the platform keychain |
+| `clear [name]` | Remove cached secrets from keychain (all if no name given) |
 | `daemon` | Run the backup scheduler in foreground (launchd runs this) |
 | `run [name]` | Manually trigger one or all backups |
 | `now` | Run all backups immediately |
@@ -58,6 +59,12 @@ goback auth
 
 # Clear cached secrets from keychain
 goback auth --clear
+
+# Clear all cached secrets (same as auth --clear)
+goback clear
+
+# Clear only homeassistant secrets
+goback clear homeassistant
 
 # Verify all targets are reachable
 goback dry-run

@@ -44,6 +44,12 @@ Run this once after changing secrets, before starting the daemon.
 .B auth \-\-clear
 Remove all cached secrets from the platform keychain.
 .TP
+.B clear \fR[\fIname\fR]
+Remove cached secrets from the platform keychain. If
+.I name
+is provided, only secrets for that backup job are removed. Otherwise, all
+cached secrets are removed.
+.TP
 .B daemon
 Run the backup scheduler in the foreground. This is the command invoked
 by launchd. Schedules all configured backups according to their cron
@@ -182,6 +188,12 @@ Resolve 1Password secrets and cache them in the system keychain.
 .TP
 .B goback auth \-\-clear
 Remove all cached secrets from the system keychain.
+.TP
+.B goback clear
+Remove all cached secrets from the system keychain.
+.TP
+.B goback clear homeassistant
+Remove only the homeassistant backup's cached secrets.
 .TP
 .B goback dry-run
 Verify connectivity and configuration for all targets without transferring files.

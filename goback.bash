@@ -9,12 +9,12 @@ _goback() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "auth init daemon run now dry-run list status version help" -- "$cur") )
+        COMPREPLY=( $(compgen -W "auth clear init daemon run now dry-run list status version help" -- "$cur") )
         return 0
     fi
 
     case "$prev" in
-        run|dry-run)
+        run|dry-run|clear)
             local names=""
             if [[ -f ~/.config/goback/config.yaml ]]; then
                 names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')

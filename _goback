@@ -7,6 +7,7 @@ _goback() {
     local -a commands
     commands=(
         'auth:Resolve op:// secrets and cache in system keychain'
+        'clear:Remove cached secrets from keychain'
         'init:Create default config file'
         'daemon:Run the backup scheduler (foreground)'
         'run:Manually trigger one or all backups'
@@ -28,7 +29,7 @@ _goback() {
             ;;
         args)
             case $words[1] in
-                run|dry-run)
+                run|dry-run|clear)
                     _goback_backup_names
                     ;;
                 auth)
