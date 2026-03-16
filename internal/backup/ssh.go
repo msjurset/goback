@@ -16,8 +16,8 @@ import (
 	"golang.org/x/crypto/ssh"
 	"golang.org/x/crypto/ssh/agent"
 
-	"github.com/msjurseth/markback/internal/config"
-	"github.com/msjurseth/markback/internal/storage"
+	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/storage"
 )
 
 type SSHProvider struct{}

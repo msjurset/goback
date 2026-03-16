@@ -9,7 +9,7 @@ import (
 func TestDefaultPath(t *testing.T) {
 	path := DefaultPath()
 	home, _ := os.UserHomeDir()
-	want := filepath.Join(home, ".config", "markback", "config.yaml")
+	want := filepath.Join(home, ".config", "goback", "config.yaml")
 	if path != want {
 		t.Errorf("DefaultPath() = %q, want %q", path, want)
 	}

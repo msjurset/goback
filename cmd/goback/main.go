@@ -11,18 +11,18 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/msjurseth/markback/internal/backup"
-	"github.com/msjurseth/markback/internal/config"
-	"github.com/msjurseth/markback/internal/credentials"
-	"github.com/msjurseth/markback/internal/daemon"
-	"github.com/msjurseth/markback/internal/storage"
+	"github.com/msjurset/goback/internal/backup"
+	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/credentials"
+	"github.com/msjurset/goback/internal/daemon"
+	"github.com/msjurset/goback/internal/storage"
 )
 
 var version = "dev"
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
-	log.SetPrefix("markback: ")
+	log.SetPrefix("goback: ")
 
 	if len(os.Args) < 2 {
 		usage()
@@ -37,7 +37,7 @@ func main() {
 		cmdAuth()
 		return
 	case "version", "-v", "--version":
-		fmt.Printf("markback %s\n", version)
+		fmt.Printf("goback %s\n", version)
 		return
 	case "help", "-h", "--help":
 		usage()
@@ -76,7 +76,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `Usage: markback <command> [args]
+	fmt.Fprintf(os.Stderr, `Usage: goback <command> [args]
 
 Commands:
   init              Create default config file
@@ -90,8 +90,8 @@ Commands:
   status            Show recent backup history
 
 Service management (macOS):
-  launchctl load ~/Library/LaunchAgents/com.markback.daemon.plist
-  launchctl unload ~/Library/LaunchAgents/com.markback.daemon.plist
+  launchctl load ~/Library/LaunchAgents/com.goback.daemon.plist
+  launchctl unload ~/Library/LaunchAgents/com.goback.daemon.plist
 `)
 }
 

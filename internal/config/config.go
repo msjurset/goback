@@ -8,7 +8,7 @@ import (
 
 	"gopkg.in/yaml.v3"
 
-	"github.com/msjurseth/markback/internal/credentials"
+	"github.com/msjurset/goback/internal/credentials"
 )
 
 type Config struct {
@@ -41,7 +41,7 @@ type BackupConfig struct {
 
 func DefaultPath() string {
 	home, _ := os.UserHomeDir()
-	return filepath.Join(home, ".config", "markback", "config.yaml")
+	return filepath.Join(home, ".config", "goback", "config.yaml")
 }
 
 func Load(path string) (*Config, error) {
@@ -169,7 +169,7 @@ func (c *Config) resolveSecrets() error {
 func DefaultConfig() string {
 	return `storage:
   base_dir: ~/backups
-  log_file: ~/Library/Logs/markback.log
+  log_file: ~/Library/Logs/goback.log
 
 backups:
   - name: homeassistant

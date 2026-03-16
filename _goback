@@ -1,9 +1,9 @@
-#compdef markback
+#compdef goback
 
-# Zsh completion script for markback
-# Install: cp _markback ~/.oh-my-zsh/custom/completions/
+# Zsh completion script for goback
+# Install: cp _goback ~/.oh-my-zsh/custom/completions/
 
-_markback() {
+_goback() {
     local -a commands
     commands=(
         'auth:Resolve op:// secrets and cache in system keychain'
@@ -24,12 +24,12 @@ _markback() {
 
     case $state in
         command)
-            _describe -t commands 'markback command' commands
+            _describe -t commands 'goback command' commands
             ;;
         args)
             case $words[1] in
                 run|dry-run)
-                    _markback_backup_names
+                    _goback_backup_names
                     ;;
                 auth)
                     _arguments '--clear[Remove cached secrets from keychain]'
@@ -39,12 +39,12 @@ _markback() {
     esac
 }
 
-_markback_backup_names() {
+_goback_backup_names() {
     local -a names
-    if [[ -f ~/.config/markback/config.yaml ]]; then
-        names=(${(f)"$(grep '^\s*- name:' ~/.config/markback/config.yaml | sed 's/.*name:\s*//')"})
+    if [[ -f ~/.config/goback/config.yaml ]]; then
+        names=(${(f)"$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')"})
     fi
     _describe -t names 'backup name' names
 }
 
-_markback "$@"
+_goback "$@"

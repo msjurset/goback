@@ -15,8 +15,8 @@ import (
 
 	"github.com/gorilla/websocket"
 
-	"github.com/msjurseth/markback/internal/config"
-	"github.com/msjurseth/markback/internal/storage"
+	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/storage"
 )
 
 type HAProvider struct{}

@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-const serviceName = "markback"
+const serviceName = "goback"
 
 // Store saves a secret to the platform keychain under the given key.
 func Store(key, value string) error {

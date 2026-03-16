@@ -1,4 +1,4 @@
-# markback
+# goback
 
 Scheduled pull-based backup manager for home network services.
 
@@ -9,7 +9,7 @@ Scheduled pull-based backup manager for home network services.
 - **Cron scheduling** — each backup job runs on its own cron schedule
 - **Retention management** — automatically removes old backups beyond configured count
 - **1Password integration** — resolves `op://` secret references for tokens and SSH keys
-- **Platform keychain caching** — `markback auth` resolves secrets and caches them in the system keychain (macOS Keychain, Linux secret-tool, Windows cmdkey) so the daemon runs without 1Password
+- **Platform keychain caching** — `goback auth` resolves secrets and caches them in the system keychain (macOS Keychain, Linux secret-tool, Windows cmdkey) so the daemon runs without 1Password
 - **SSH config parsing** — reads `~/.ssh/config` for Host aliases, Hostname, Port, User, and IdentityAgent
 - **PKCS#8 SSH key support** — handles 1Password's SSH key export format
 - **Glob-based remote files** — `remote_pattern` finds the newest file matching a glob on the remote host
@@ -29,14 +29,14 @@ This builds the binary to `/usr/local/bin/`, installs the man page, and sets up 
 ## Usage
 
 ```
-markback <command> [args]
+goback <command> [args]
 ```
 
 ### Commands
 
 | Command | Description |
 |---------|-------------|
-| `init` | Create default config file at `~/.config/markback/config.yaml` |
+| `init` | Create default config file at `~/.config/goback/config.yaml` |
 | `auth` | Resolve `op://` secrets and cache them in the platform keychain |
 | `auth --clear` | Remove cached secrets from the platform keychain |
 | `daemon` | Run the backup scheduler in foreground (launchd runs this) |
@@ -51,47 +51,47 @@ markback <command> [args]
 
 ```bash
 # Initialize config
-markback init
+goback init
 
 # Resolve 1Password secrets and cache in system keychain
-markback auth
+goback auth
 
 # Clear cached secrets from keychain
-markback auth --clear
+goback auth --clear
 
 # Verify all targets are reachable
-markback dry-run
+goback dry-run
 
 # Test just the pihole backup
-markback dry-run pihole
+goback dry-run pihole
 
 # Manually run a single backup
-markback run pihole
+goback run pihole
 
 # Run all backups now
-markback now
+goback now
 
 # Show what's configured
-markback list
+goback list
 
 # Check recent backup results
-markback status
+goback status
 
 # Print version
-markback version
+goback version
 
 # Start the daemon (or let launchd do it)
-markback daemon
+goback daemon
 ```
 
 ### Configuration
 
-Config lives at `~/.config/markback/config.yaml`:
+Config lives at `~/.config/goback/config.yaml`:
 
 ```yaml
 storage:
   base_dir: ~/backups
-  log_file: ~/Library/Logs/markback.log
+  log_file: ~/Library/Logs/goback.log
 
 backups:
   - name: homeassistant
@@ -145,22 +145,22 @@ backups:
 
 ### Authentication & Keychain
 
-`markback auth` resolves all `op://` references in the config (API tokens, SSH keys) via the 1Password CLI and caches the resolved values in the platform keychain:
+`goback auth` resolves all `op://` references in the config (API tokens, SSH keys) via the 1Password CLI and caches the resolved values in the platform keychain:
 
 - **macOS** — Keychain (via `security`)
 - **Linux** — Secret Service / `secret-tool`
 - **Windows** — Windows Credential Manager / `cmdkey`
 
-This lets the daemon run unattended without requiring 1Password to be unlocked. Run `markback auth` once after changing secrets, then start the daemon. Use `markback auth --clear` to remove all cached secrets.
+This lets the daemon run unattended without requiring 1Password to be unlocked. Run `goback auth` once after changing secrets, then start the daemon. Use `goback auth --clear` to remove all cached secrets.
 
 ### Service Management
 
 ```bash
 # Start daemon via launchd
-launchctl load ~/Library/LaunchAgents/com.markback.daemon.plist
+launchctl load ~/Library/LaunchAgents/com.goback.daemon.plist
 
 # Stop daemon
-launchctl unload ~/Library/LaunchAgents/com.markback.daemon.plist
+launchctl unload ~/Library/LaunchAgents/com.goback.daemon.plist
 ```
 
 ## Build

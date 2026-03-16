@@ -1,12 +1,12 @@
-.TH MARKBACK 1 "March 2026" "version 1.0.0" "User Commands"
+.TH GOBACK 1 "March 2026" "version 1.0.0" "User Commands"
 .SH NAME
-markback \- scheduled pull-based backup manager for home network services
+goback \- scheduled pull-based backup manager for home network services
 .SH SYNOPSIS
-.B markback
+.B goback
 .I command
 [\fIargs\fR]
 .SH DESCRIPTION
-.B markback
+.B goback
 is a backup daemon and CLI for pulling backups from home network services.
 It supports two backup providers: Home Assistant API backups (WebSocket-based
 listing/downloading, REST for triggering, signed URLs for download) and SSH/SCP
@@ -25,13 +25,13 @@ SSH configuration is read from
 for Host aliases, Hostname, Port, User, and IdentityAgent.
 .PP
 Configuration is stored in
-.I ~/.config/markback/config.yaml
+.I ~/.config/goback/config.yaml
 as YAML.
 .SH COMMANDS
 .TP
 .B init
 Create a default configuration file at
-.IR ~/.config/markback/config.yaml .
+.IR ~/.config/goback/config.yaml .
 Will not overwrite an existing file.
 .TP
 .B auth
@@ -56,7 +56,7 @@ is provided, only that backup job runs. Otherwise, all configured jobs run.
 .TP
 .B now
 Run all configured backups immediately, ignoring schedules. Equivalent to
-.BR "markback run" .
+.BR "goback run" .
 .TP
 .B dry-run \fR[\fIname\fR]
 Simulate backups without transferring files. Connects to each target to
@@ -174,46 +174,46 @@ Command to run on the remote host after downloading.
 .RE
 .SH EXAMPLES
 .TP
-.B markback init
+.B goback init
 Create a default configuration file with example backup targets.
 .TP
-.B markback auth
+.B goback auth
 Resolve 1Password secrets and cache them in the system keychain.
 .TP
-.B markback auth \-\-clear
+.B goback auth \-\-clear
 Remove all cached secrets from the system keychain.
 .TP
-.B markback dry-run
+.B goback dry-run
 Verify connectivity and configuration for all targets without transferring files.
 .TP
-.B markback dry-run pihole
+.B goback dry-run pihole
 Test only the pihole backup configuration.
 .TP
-.B markback run pihole
+.B goback run pihole
 Manually trigger the pihole backup.
 .TP
-.B markback now
+.B goback now
 Run all backups immediately.
 .TP
-.B markback list
+.B goback list
 Show all configured backup jobs.
 .TP
-.B markback status
+.B goback status
 Show recent backup results.
 .TP
-.B markback version
+.B goback version
 Print version information.
 .SH SERVICE MANAGEMENT
 To install as a macOS launchd service:
 .PP
 .RS
-.B launchctl load ~/Library/LaunchAgents/com.markback.daemon.plist
+.B launchctl load ~/Library/LaunchAgents/com.goback.daemon.plist
 .RE
 .PP
 To stop the service:
 .PP
 .RS
-.B launchctl unload ~/Library/LaunchAgents/com.markback.daemon.plist
+.B launchctl unload ~/Library/LaunchAgents/com.goback.daemon.plist
 .RE
 .SH EXIT STATUS
 .TP
@@ -224,13 +224,13 @@ Success.
 An error occurred (backup failure, configuration error, or connectivity issue).
 .SH FILES
 .TP
-.I ~/.config/markback/config.yaml
+.I ~/.config/goback/config.yaml
 Configuration file.
 .TP
-.I ~/Library/Logs/markback.log
+.I ~/Library/Logs/goback.log
 Default log file location.
 .TP
-.I ~/Library/LaunchAgents/com.markback.daemon.plist
+.I ~/Library/LaunchAgents/com.goback.daemon.plist
 launchd service definition.
 .SH AUTHOR
 Mark Sjurseth

@@ -1,4 +1,4 @@
-module github.com/msjurseth/markback
+module github.com/msjurset/goback
 
 go 1.25.5
 

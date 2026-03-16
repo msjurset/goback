@@ -7,9 +7,9 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/msjurseth/markback/internal/config"
-	"github.com/msjurseth/markback/internal/scheduler"
-	"github.com/msjurseth/markback/internal/storage"
+	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/scheduler"
+	"github.com/msjurset/goback/internal/storage"
 )
 
 func Run(cfg *config.Config) error {
@@ -23,7 +23,7 @@ func Run(cfg *config.Config) error {
 	}
 
 	sched.Start()
-	log.Printf("markback daemon started with %d backup jobs", len(cfg.Backups))
+	log.Printf("goback daemon started with %d backup jobs", len(cfg.Backups))
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

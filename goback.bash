@@ -1,8 +1,8 @@
-# Bash completion script for markback
-# Install: markback completion bash > /etc/bash_completion.d/markback
-#   — or — source markback.bash
+# Bash completion script for goback
+# Install: goback completion bash > /etc/bash_completion.d/goback
+#   — or — source goback.bash
 
-_markback() {
+_goback() {
     local cur prev
     COMPREPLY=()
     cur="${COMP_WORDS[COMP_CWORD]}"
@@ -16,8 +16,8 @@ _markback() {
     case "$prev" in
         run|dry-run)
             local names=""
-            if [[ -f ~/.config/markback/config.yaml ]]; then
-                names=$(grep '^\s*- name:' ~/.config/markback/config.yaml | sed 's/.*name:\s*//')
+            if [[ -f ~/.config/goback/config.yaml ]]; then
+                names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')
             fi
             COMPREPLY=( $(compgen -W "$names" -- "$cur") )
             return 0
@@ -29,4 +29,4 @@ _markback() {
     esac
 }
 
-complete -F _markback markback
+complete -F _goback goback
