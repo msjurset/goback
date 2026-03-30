@@ -53,3 +53,21 @@ func (s *Scheduler) Start() {
 func (s *Scheduler) Stop() context.Context {
 	return s.cron.Stop()
 }
+
+// ReplaceAll stops the current cron, rebuilds with new configs, and restarts.
+func (s *Scheduler) ReplaceAll(backups []config.BackupConfig) {
+	// Stop current scheduler and wait for running jobs
+	stopCtx := s.cron.Stop()
+	<-stopCtx.Done()
+
+	// Create new cron instance
+	s.cron = cron.New()
+
+	for _, b := range backups {
+		if err := s.Add(b); err != nil {
+			log.Printf("error: schedule %s: %v", b.Name, err)
+		}
+	}
+
+	s.cron.Start()
+}

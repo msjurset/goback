@@ -250,7 +250,7 @@ func cmdClear(name string) {
 }
 
 func cmdDaemon(cfg *config.Config) {
-	if err := daemon.Run(cfg); err != nil {
+	if err := daemon.RunWithPath(cfg, config.DefaultPath()); err != nil {
 		log.Fatalf("daemon error: %v", err)
 	}
 }
