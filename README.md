@@ -6,6 +6,7 @@ Scheduled pull-based backup manager for home network services.
 
 - **Home Assistant API backups** — triggers backup creation via REST, lists/downloads via WebSocket API, fetches via signed URLs
 - **SSH/SCP backups** — pulls files from remote hosts via SSH agent or per-backup SSH keys
+- **Local backups** — runs a local command to generate a backup file, then copies it into managed storage
 - **Cron scheduling** — each backup job runs on its own cron schedule
 - **Retention management** — automatically removes old backups beyond configured count
 - **1Password integration** — resolves `op://` secret references for tokens and SSH keys
@@ -47,6 +48,7 @@ goback <command> [args]
 | `dry-run [name]` | Simulate backups — connect but don't transfer |
 | `list` | Show configured backup jobs |
 | `status` | Show recent backup history |
+| `last <name>` | Print timestamp of last successful backup for a job (exits 1 if none) |
 | `version` | Print version (also `-v`, `--version`) |
 
 ### Examples
@@ -129,6 +131,15 @@ backups:
     ssh_key: "op://Vault/SSH Key/private key"
     remote_pattern: "/home/pi/backups/unbound/unbound-*.tar.gz"
     retention: 4
+
+  - name: recruit
+    type: local
+    schedule: "0 5 * * 0"
+    folder: recruit
+    pre_command: "recruit --backup"
+    local_path: /tmp/recruit-backup.tar.gz
+    post_command: "rm /tmp/recruit-backup.tar.gz"
+    retention: 4
 ```
 
 #### Backup Config Fields
@@ -136,7 +147,7 @@ backups:
 | Field | Type | Required | Description |
 |-------|------|----------|-------------|
 | `name` | string | yes | Unique identifier for this backup |
-| `type` | string | yes | `ha_api` or `ssh` |
+| `type` | string | yes | `ha_api`, `ssh`, or `local` |
 | `schedule` | string | yes | Cron expression (5-field) |
 | `folder` | string | no | Subdirectory in base_dir (defaults to name) |
 | `filename` | string | no | Output filename template with `{time-format}` |
@@ -148,8 +159,10 @@ backups:
 | `remote_path` | string | ssh | File to download |
 | `remote_pattern` | string | ssh | Glob pattern to find newest matching remote file (alternative to `remote_path`) |
 | `ssh_key` | string | no | SSH private key for this backup; supports `op://` references |
-| `pre_command` | string | no | Remote command before download |
-| `post_command` | string | no | Remote command after download |
+| `pre_command` | string | no | Command before download (remote for ssh, local for local) |
+| `post_command` | string | no | Command after download (remote for ssh, local for local) |
+| `local_path` | string | local | Local file to back up |
+| `local_pattern` | string | local | Glob pattern to find newest matching local file (alternative to `local_path`) |
 
 ### Authentication & Keychain
 
