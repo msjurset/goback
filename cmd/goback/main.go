@@ -43,6 +43,9 @@ func main() {
 		}
 		cmdClear(name)
 		return
+	case "completion":
+		cmdCompletion()
+		return
 	case "version", "-v", "--version":
 		fmt.Printf("goback %s\n", version)
 		return
@@ -96,6 +99,7 @@ Commands:
   auth              Resolve and cache op:// secrets in system keychain
   auth --clear      Remove cached secrets from system keychain
   clear [name]      Remove cached secrets from keychain (all if no name given)
+  completion <shell> Output shell completion script (bash, zsh)
   daemon            Run the backup scheduler (foreground)
   run [name]        Manually trigger one or all backups
   now               Run all backups immediately

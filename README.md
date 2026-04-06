@@ -18,6 +18,8 @@ Scheduled pull-based backup manager for home network services.
 - **Dry run mode** — validates connectivity and config without transferring files
 - **Configurable filenames** — Go time format templates for output file naming
 - **Missed backup catchup** — detects backups missed during sleep/downtime and runs them on wake
+- **Config hot-reload** — daemon detects config file changes and rebuilds the schedule without restarting
+- **Binary auto-restart** — daemon exits when the binary is updated, letting launchd restart with the new version
 - **macOS launchd service** — runs as a user-level daemon with auto-restart
 
 ## Install
@@ -42,6 +44,7 @@ goback <command> [args]
 | `auth` | Resolve `op://` secrets and cache them in the platform keychain |
 | `auth --clear` | Remove cached secrets from the platform keychain |
 | `clear [name]` | Remove cached secrets from keychain (all if no name given) |
+| `completion <shell>` | Output shell completion script (`bash`, `zsh`) |
 | `daemon` | Run the backup scheduler in foreground with missed backup catchup |
 | `run [name]` | Manually trigger one or all backups |
 | `now` | Run all backups immediately |
@@ -87,8 +90,17 @@ goback list
 # Check recent backup results
 goback status
 
+# Check when homeassistant was last backed up
+goback last homeassistant
+
 # Print version
 goback version
+
+# Install zsh completions
+goback completion zsh > ~/.oh-my-zsh/custom/completions/_goback
+
+# Enable bash completions for current session
+eval "$(goback completion bash)"
 
 # Start the daemon (or let launchd do it)
 goback daemon

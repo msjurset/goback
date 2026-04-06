@@ -36,8 +36,8 @@ install-man:
 	install -d /usr/local/share/man/man1
 	install -m 644 goback.1 /usr/local/share/man/man1/goback.1
 
-install-completion:
+install-completion: build
 	install -d ~/.oh-my-zsh/custom/completions
-	install -m 644 _goback ~/.oh-my-zsh/custom/completions/_goback
+	./$(BINARY) completion zsh > ~/.oh-my-zsh/custom/completions/_goback
 
 .PHONY: build test clean release deploy install-man install-completion

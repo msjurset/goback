@@ -1,6 +1,5 @@
 # Bash completion script for goback
-# Install: goback completion bash > /etc/bash_completion.d/goback
-#   — or — source goback.bash
+# Install: eval "$(goback completion bash)"
 
 _goback() {
     local cur prev
@@ -9,12 +8,12 @@ _goback() {
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
     if [[ ${COMP_CWORD} -eq 1 ]]; then
-        COMPREPLY=( $(compgen -W "auth clear init daemon run now dry-run list status version help" -- "$cur") )
+        COMPREPLY=( $(compgen -W "auth clear completion init daemon run now dry-run list status last version help" -- "$cur") )
         return 0
     fi
 
     case "$prev" in
-        run|dry-run|clear)
+        run|dry-run|clear|last)
             local names=""
             if [[ -f ~/.config/goback/config.yaml ]]; then
                 names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')
@@ -24,6 +23,10 @@ _goback() {
             ;;
         auth)
             COMPREPLY=( $(compgen -W "--clear" -- "$cur") )
+            return 0
+            ;;
+        completion)
+            COMPREPLY=( $(compgen -W "bash zsh" -- "$cur") )
             return 0
             ;;
     esac

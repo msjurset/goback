@@ -8,9 +8,9 @@ goback \- scheduled pull-based backup manager for home network services
 .SH DESCRIPTION
 .B goback
 is a backup daemon and CLI for pulling backups from home network services.
-It supports two backup providers: Home Assistant API backups (WebSocket-based
-listing/downloading, REST for triggering, signed URLs for download) and SSH/SCP
-file transfers. Backups are scheduled via cron expressions and managed with
+It supports three backup providers: Home Assistant API backups (WebSocket-based
+listing/downloading, REST for triggering, signed URLs for download), SSH/SCP
+file transfers, and local command-based backups. Backups are scheduled via cron expressions and managed with
 configurable retention policies.
 .PP
 The daemon runs as a macOS launchd service. Secrets (API tokens, SSH keys)
@@ -50,6 +50,11 @@ Remove cached secrets from the platform keychain. If
 is provided, only secrets for that backup job are removed. Otherwise, all
 cached secrets are removed.
 .TP
+.B completion \fR\fIshell\fR
+Output the shell completion script for the given shell. Supported shells:
+.BR bash ,
+.BR zsh .
+.TP
 .B daemon
 Run the backup scheduler in the foreground. This is the command invoked
 by launchd. Schedules all configured backups according to their cron
@@ -61,6 +66,13 @@ its last successful run in the status log. This catches backups that were
 missed while the Mac was asleep. Missed backups are run sequentially and
 logged with a \fBcatchup:\fR prefix. Backups that have never run are
 skipped; use \fBgoback run\fR for first-time execution.
+.IP
+The daemon watches the configuration file for changes and automatically
+reloads when it is modified. If the new configuration is invalid, the
+previous configuration is kept and a warning is logged. The daemon also
+monitors its own binary; when the binary is replaced (e.g., after
+\fBmake deploy\fR), the daemon exits so that launchd can restart it with
+the new version.
 .TP
 .B run \fR[\fIname\fR]
 Manually trigger a backup. If
@@ -84,6 +96,10 @@ schedule, and retention count.
 .B status
 Show recent backup history from the status log, including timestamps,
 file sizes, and success/failure status. Displays the most recent 20 entries.
+.TP
+.B last \fR\fIname\fR
+Print the RFC 3339 timestamp of the most recent successful backup for the
+named job. Exits with status 1 if no successful backup is found.
 .TP
 .B version\fR, \fB\-v\fR, \fB\-\-version
 Print version information and exit.
@@ -112,9 +128,10 @@ Unique identifier for this backup job (required).
 .TP
 .B type
 Provider type:
-.B ha_api
+.BR ha_api ,
+.BR ssh ,
 or
-.B ssh
+.B local
 (required).
 .TP
 .B schedule
@@ -185,6 +202,29 @@ Command to run on the remote host before downloading.
 .B post_command
 Command to run on the remote host after downloading.
 .RE
+.PP
+For
+.B local
+type, additionally:
+.RS
+.TP
+.B local_path
+Path to the local file to back up (required unless
+.B local_pattern
+is set or
+.B pre_command
+produces a known output file).
+.TP
+.B local_pattern
+Glob pattern to find the newest matching local file (alternative to
+.BR local_path ).
+.TP
+.B pre_command
+Command to run locally before copying the file (e.g., to generate the backup).
+.TP
+.B post_command
+Command to run locally after copying the file (e.g., to clean up temp files).
+.RE
 .SH EXAMPLES
 .TP
 .B goback init
@@ -219,6 +259,15 @@ Show all configured backup jobs.
 .TP
 .B goback status
 Show recent backup results.
+.TP
+.B goback last homeassistant
+Print the timestamp of the last successful homeassistant backup.
+.TP
+.B goback completion zsh > ~/.oh-my-zsh/custom/completions/_goback
+Install zsh completions.
+.TP
+.B eval "$(goback completion bash)"
+Enable bash completions for the current session.
 .TP
 .B goback version
 Print version information.
