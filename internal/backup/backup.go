@@ -23,6 +23,8 @@ func NewProvider(backupType string) (Provider, error) {
 		return &HAProvider{}, nil
 	case "ssh":
 		return &SSHProvider{}, nil
+	case "local":
+		return &LocalProvider{}, nil
 	default:
 		return nil, fmt.Errorf("unknown backup type: %s", backupType)
 	}

@@ -24,6 +24,16 @@ func TestNewProviderHA(t *testing.T) {
 	}
 }
 
+func TestNewProviderLocal(t *testing.T) {
+	p, err := NewProvider("local")
+	if err != nil {
+		t.Fatalf("NewProvider(local) error: %v", err)
+	}
+	if _, ok := p.(*LocalProvider); !ok {
+		t.Errorf("NewProvider(local) returned %T, want *LocalProvider", p)
+	}
+}
+
 func TestNewProviderUnknown(t *testing.T) {
 	_, err := NewProvider("ftp")
 	if err == nil {

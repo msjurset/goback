@@ -166,6 +166,41 @@ func TestValidateDuplicateName(t *testing.T) {
 	}
 }
 
+func TestValidateLocalValid(t *testing.T) {
+	tests := []struct {
+		name   string
+		backup BackupConfig
+	}{
+		{"with local_path", BackupConfig{Name: "t", Type: "local", Schedule: "* * * * *", LocalPath: "/tmp/backup.tar.gz"}},
+		{"with local_pattern", BackupConfig{Name: "t", Type: "local", Schedule: "* * * * *", LocalPattern: "/tmp/backup-*.tar.gz"}},
+		{"with pre_command only", BackupConfig{Name: "t", Type: "local", Schedule: "* * * * *", PreCommand: "recruit --backup"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{
+				Storage: StorageConfig{BaseDir: "/tmp"},
+				Backups: []BackupConfig{tt.backup},
+			}
+			if err := cfg.validate(); err != nil {
+				t.Errorf("validate() unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestValidateLocalMissingFields(t *testing.T) {
+	cfg := &Config{
+		Storage: StorageConfig{BaseDir: "/tmp"},
+		Backups: []BackupConfig{
+			{Name: "t", Type: "local", Schedule: "* * * * *"},
+		},
+	}
+	if err := cfg.validate(); err == nil {
+		t.Error("validate() expected error for local type with no path/pattern/command, got nil")
+	}
+}
+
 func TestValidateUnknownType(t *testing.T) {
 	cfg := &Config{
 		Storage: StorageConfig{BaseDir: "/tmp"},

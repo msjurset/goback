@@ -36,6 +36,8 @@ type BackupConfig struct {
 	PreCommand    string `yaml:"pre_command,omitempty"`
 	RemotePath    string `yaml:"remote_path,omitempty"`
 	RemotePattern string `yaml:"remote_pattern,omitempty"`
+	LocalPath     string `yaml:"local_path,omitempty"`
+	LocalPattern  string `yaml:"local_pattern,omitempty"`
 	PostCommand   string `yaml:"post_command,omitempty"`
 }
 
@@ -136,8 +138,12 @@ func (c *Config) validate() error {
 			if b.RemotePath == "" && b.RemotePattern == "" {
 				return fmt.Errorf("backup %q: remote_path or remote_pattern is required for ssh type", b.Name)
 			}
+		case "local":
+			if b.LocalPath == "" && b.LocalPattern == "" && b.PreCommand == "" {
+				return fmt.Errorf("backup %q: local_path, local_pattern, or pre_command is required for local type", b.Name)
+			}
 		default:
-			return fmt.Errorf("backup %q: unknown type %q (expected ha_api or ssh)", b.Name, b.Type)
+			return fmt.Errorf("backup %q: unknown type %q (expected ha_api, ssh, or local)", b.Name, b.Type)
 		}
 	}
 
@@ -210,6 +216,15 @@ backups:
     pre_command: "sudo tar czf /tmp/unbound-backup.tar.gz /etc/unbound"
     remote_path: /tmp/unbound-backup.tar.gz
     post_command: "rm /tmp/unbound-backup.tar.gz"
+    retention: 4
+
+  - name: recruit
+    type: local
+    schedule: "0 5 * * 0"    # Sunday 5:00 AM
+    folder: recruit
+    pre_command: "recruit --backup"
+    local_path: /tmp/recruit-backup.tar.gz
+    post_command: "rm /tmp/recruit-backup.tar.gz"
     retention: 4
 `
 }
