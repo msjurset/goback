@@ -3,20 +3,50 @@ package credentials
 import (
 	"encoding/hex"
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
 
+// trustedApps returns the application paths that should be granted
+// keychain ACL access to items this process creates. By default: the
+// running goback binary (so non-interactive callers like scheduled
+// runbook steps can read cached secrets without a confirmation dialog),
+// plus /usr/bin/security for admin introspection. Additional paths can
+// be added via GOBACK_KEYCHAIN_TRUST (colon-separated) when goback is
+// installed in more than one location.
+func trustedApps() []string {
+	apps := []string{"/usr/bin/security"}
+	if self, err := os.Executable(); err == nil && self != "" {
+		apps = append(apps, self)
+	}
+	if extra := os.Getenv("GOBACK_KEYCHAIN_TRUST"); extra != "" {
+		for _, p := range strings.Split(extra, ":") {
+			if p != "" {
+				apps = append(apps, p)
+			}
+		}
+	}
+	return apps
+}
+
 func platformStore(key, value string) error {
-	// Delete first to avoid "already exists" error
+	// Delete first so the item is re-created with a fresh ACL; -U updates
+	// the password value but leaves the existing ACL in place.
 	_ = platformDelete(key)
 
-	cmd := exec.Command("security", "add-generic-password",
+	args := []string{
+		"add-generic-password",
 		"-s", serviceName,
 		"-a", key,
 		"-w", value,
 		"-U",
-	)
+	}
+	for _, app := range trustedApps() {
+		args = append(args, "-T", app)
+	}
+
+	cmd := exec.Command("security", args...)
 	if out, err := cmd.CombinedOutput(); err != nil {
 		return fmt.Errorf("keychain store: %s: %w", strings.TrimSpace(string(out)), err)
 	}

@@ -302,6 +302,7 @@ func cmdRun(cfg *config.Config, name string, dryRun bool) {
 			r.status = "FAILED"
 			r.err = err
 			if !dryRun {
+				log.Printf("backup %s failed: %v", t.Name, err)
 				_ = store.RecordBackup(storage.BackupRecord{
 					Name:      t.Name,
 					Timestamp: time.Now(),

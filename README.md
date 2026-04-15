@@ -10,7 +10,7 @@ Scheduled pull-based backup manager for home network services.
 - **Cron scheduling** — each backup job runs on its own cron schedule
 - **Retention management** — automatically removes old backups beyond configured count
 - **1Password integration** — resolves `op://` secret references for tokens and SSH keys
-- **Platform keychain caching** — `goback auth` resolves secrets and caches them in the system keychain (macOS Keychain, Linux secret-tool, Windows cmdkey) so the daemon runs without 1Password
+- **Platform keychain caching** — `goback auth` resolves secrets and caches them in the system keychain (macOS Keychain, Linux secret-tool, Windows cmdkey) so the daemon runs without 1Password. On macOS, cached items are created with ACL entries trusting the goback binary, so non-interactive callers (cron, launchd) can read them without a confirmation dialog.
 - **SSH config parsing** — reads `~/.ssh/config` for Host aliases, Hostname, Port, User, and IdentityAgent
 - **PKCS#8 SSH key support** — handles 1Password's SSH key export format
 - **Glob-based remote files** — `remote_pattern` finds the newest file matching a glob on the remote host
@@ -185,6 +185,8 @@ backups:
 - **Windows** — Windows Credential Manager / `cmdkey`
 
 This lets the daemon run unattended without requiring 1Password to be unlocked. Run `goback auth` once after changing secrets, then start the daemon. Use `goback auth --clear` to remove all cached secrets.
+
+If scheduled (non-interactive) invocations of `goback run` start failing with `keychain store: Write permissions error` — typically after a macOS upgrade or when items were created by a different goback binary — run `make reauth-keychain` to clear and re-cache the items so the current binary is in the ACL. If goback is installed at more than one path, set `GOBACK_KEYCHAIN_TRUST=/path/to/other/goback` (colon-separated for multiple) when running `goback auth` so every invocation path is trusted.
 
 ### Service Management
 

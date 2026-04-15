@@ -28,8 +28,13 @@ release: clean test
 	rm dist/goback.1
 
 deploy: build install-man install-completion
-	cp $(BINARY) /usr/local/bin/
+	# Unload the daemon BEFORE overwriting the binary. Copying over a
+	# running ad-hoc-signed executable on Apple Silicon invalidates the
+	# in-kernel code-signing state and subsequent launches are killed
+	# with OS_REASON_CODESIGNING.
 	-launchctl unload ~/Library/LaunchAgents/com.goback.daemon.plist 2>/dev/null
+	cp $(BINARY) /usr/local/bin/
+	codesign --force --sign - /usr/local/bin/$(BINARY)
 	launchctl load ~/Library/LaunchAgents/com.goback.daemon.plist
 
 install-man:
@@ -40,4 +45,7 @@ install-completion: build
 	install -d ~/.oh-my-zsh/custom/completions
 	./$(BINARY) completion zsh > ~/.oh-my-zsh/custom/completions/_goback
 
-.PHONY: build test clean release deploy install-man install-completion
+reauth-keychain:
+	./scripts/reauth-keychain.sh
+
+.PHONY: build test clean release deploy install-man install-completion reauth-keychain
