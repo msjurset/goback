@@ -97,9 +97,18 @@ schedule, and retention count.
 Show recent backup history from the status log, including timestamps,
 file sizes, and success/failure status. Displays the most recent 20 entries.
 .TP
-.B last \fR\fIname\fR
-Print the RFC 3339 timestamp of the most recent successful backup for the
-named job. Exits with status 1 if no successful backup is found.
+.B last \fR\fIname\fR \fB[\-\-epoch\fR|\fB\-e]
+Print the timestamp of the most recent successful backup for the named job.
+By default outputs RFC 3339 (e.g.
+.IR 2026\-04\-19T06:03:27\-04:00 ).
+Pass
+.B \-\-epoch
+(or
+.BR \-e )
+to print Unix seconds instead, which avoids the RFC 3339 colon-in-timezone
+that BSD
+.BR date (1)
+cannot parse. Exits with status 1 if no successful backup is found.
 .TP
 .B version\fR, \fB\-v\fR, \fB\-\-version
 Print version information and exit.
@@ -261,7 +270,12 @@ Show all configured backup jobs.
 Show recent backup results.
 .TP
 .B goback last homeassistant
-Print the timestamp of the last successful homeassistant backup.
+Print the RFC 3339 timestamp of the last successful homeassistant backup.
+.TP
+.B goback last homeassistant \-\-epoch
+Print the Unix epoch seconds of the last successful homeassistant backup.
+Useful in shell scripts for portable age calculation:
+.IR "age_h=$(( ($(date +%s) \- $(goback last homeassistant \-\-epoch)) / 3600 ))" .
 .TP
 .B goback completion zsh > ~/.oh-my-zsh/custom/completions/_goback
 Install zsh completions.

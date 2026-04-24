@@ -80,10 +80,17 @@ func main() {
 		cmdStatus(cfg)
 	case "last":
 		name := ""
-		if len(os.Args) > 2 {
-			name = os.Args[2]
+		epoch := false
+		for _, a := range os.Args[2:] {
+			if a == "--epoch" || a == "-e" {
+				epoch = true
+				continue
+			}
+			if name == "" {
+				name = a
+			}
 		}
-		cmdLast(cfg, name)
+		cmdLast(cfg, name, epoch)
 	default:
 		fmt.Fprintf(os.Stderr, "unknown command: %s\n", os.Args[1])
 		usage()
@@ -106,7 +113,7 @@ Commands:
   dry-run [name]    Simulate backups (connect but don't transfer)
   list              Show configured backup jobs
   status            Show recent backup history
-  last <name>       Print timestamp of last successful backup for a job
+  last <name>       Print timestamp of last successful backup (RFC3339; use --epoch for Unix seconds)
 
 Service management (macOS):
   launchctl load ~/Library/LaunchAgents/com.goback.daemon.plist
@@ -385,9 +392,9 @@ func cmdStatus(cfg *config.Config) {
 	w.Flush()
 }
 
-func cmdLast(cfg *config.Config, name string) {
+func cmdLast(cfg *config.Config, name string, epoch bool) {
 	if name == "" {
-		fmt.Fprintln(os.Stderr, "usage: goback last <name>")
+		fmt.Fprintln(os.Stderr, "usage: goback last <name> [--epoch|-e]")
 		os.Exit(1)
 	}
 
@@ -397,11 +404,14 @@ func cmdLast(cfg *config.Config, name string) {
 		log.Fatalf("loading status: %v", err)
 	}
 
-	// Find most recent successful backup for this job
 	for i := len(sl.Records) - 1; i >= 0; i-- {
 		r := sl.Records[i]
 		if r.Name == name && r.Error == "" {
-			fmt.Println(r.Timestamp.Format(time.RFC3339))
+			if epoch {
+				fmt.Println(r.Timestamp.Unix())
+			} else {
+				fmt.Println(r.Timestamp.Format(time.RFC3339))
+			}
 			return
 		}
 	}

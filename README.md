@@ -51,7 +51,7 @@ goback <command> [args]
 | `dry-run [name]` | Simulate backups — connect but don't transfer |
 | `list` | Show configured backup jobs |
 | `status` | Show recent backup history |
-| `last <name>` | Print timestamp of last successful backup for a job (exits 1 if none) |
+| `last <name> [--epoch\|-e]` | Print timestamp of last successful backup (RFC 3339 by default; `--epoch` for Unix seconds, shell-script friendly) |
 | `version` | Print version (also `-v`, `--version`) |
 
 ### Examples
@@ -90,8 +90,12 @@ goback list
 # Check recent backup results
 goback status
 
-# Check when homeassistant was last backed up
+# Check when homeassistant was last backed up (human-readable)
 goback last homeassistant
+
+# Script-friendly epoch output (portable across BSD/GNU; no date parsing)
+age_h=$(( ($(date +%s) - $(goback last homeassistant --epoch)) / 3600 ))
+echo "HA last backup: ${age_h}h ago"
 
 # Print version
 goback version
