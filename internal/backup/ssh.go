@@ -10,6 +10,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,25 +21,27 @@ import (
 	"github.com/msjurset/goback/internal/storage"
 )
 
+const sshCommandKillGrace = 5 * time.Second
+
 type SSHProvider struct{}
 
-func (p *SSHProvider) Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) error {
+func (p *SSHProvider) Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) (Result, error) {
 	client, err := p.connect(cfg)
 	if err != nil {
-		return fmt.Errorf("ssh connect: %w", err)
+		return Result{}, fmt.Errorf("ssh connect: %w", err)
 	}
 	defer client.Close()
 
 	log.Printf("[%s] ssh connection to %s: ok", cfg.Name, cfg.Host)
 
 	if opts.DryRun {
-		return p.dryRun(client, cfg)
+		return Result{}, p.dryRun(client, cfg)
 	}
 
 	if cfg.PreCommand != "" {
 		log.Printf("[%s] running pre_command: %s", cfg.Name, cfg.PreCommand)
-		if err := p.runCommand(client, cfg.PreCommand); err != nil {
-			return fmt.Errorf("pre_command: %w", err)
+		if err := p.runCommand(ctx, client, cfg.PreCommand); err != nil {
+			return Result{}, fmt.Errorf("pre_command: %w", err)
 		}
 	}
 
@@ -46,7 +49,7 @@ func (p *SSHProvider) Run(ctx context.Context, cfg config.BackupConfig, store *s
 	if remotePath == "" && cfg.RemotePattern != "" {
 		resolved, err := p.resolvePattern(client, cfg.RemotePattern)
 		if err != nil {
-			return fmt.Errorf("resolving remote_pattern: %w", err)
+			return Result{}, fmt.Errorf("resolving remote_pattern: %w", err)
 		}
 		log.Printf("[%s] remote_pattern matched: %s", cfg.Name, resolved)
 		remotePath = resolved
@@ -58,25 +61,28 @@ func (p *SSHProvider) Run(ctx context.Context, cfg config.BackupConfig, store *s
 	}
 	dest := store.BackupPath(cfg.Folder, cfg.Name, ext, cfg.Filename)
 
-	log.Printf("[%s] downloading %s -> %s", cfg.Name, remotePath, dest)
-	size, err := p.scpDownload(client, remotePath, dest)
+	expected, err := p.remoteSize(client, remotePath)
 	if err != nil {
-		return fmt.Errorf("scp download: %w", err)
+		log.Printf("[%s] could not pre-stat remote (size check skipped): %v", cfg.Name, err)
+		expected = -1
+	}
+
+	log.Printf("[%s] downloading %s -> %s", cfg.Name, remotePath, dest)
+	size, err := AtomicDownload(dest, expected, func(w io.Writer) (int64, error) {
+		return p.scpDownloadTo(client, remotePath, w)
+	})
+	if err != nil {
+		return Result{}, fmt.Errorf("scp download: %w", err)
 	}
 
 	if cfg.PostCommand != "" {
 		log.Printf("[%s] running post_command: %s", cfg.Name, cfg.PostCommand)
-		if err := p.runCommand(client, cfg.PostCommand); err != nil {
+		if err := p.runCommand(ctx, client, cfg.PostCommand); err != nil {
 			log.Printf("[%s] warning: post_command failed: %v", cfg.Name, err)
 		}
 	}
 
-	return store.RecordBackup(storage.BackupRecord{
-		Name:      cfg.Name,
-		Filename:  filepath.Base(dest),
-		Timestamp: time.Now(),
-		Size:      size,
-	})
+	return Result{Filename: filepath.Base(dest), Size: size}, nil
 }
 
 func (p *SSHProvider) dryRun(client *ssh.Client, cfg config.BackupConfig) error {
@@ -243,7 +249,10 @@ func (p *SSHProvider) resolvePattern(client *ssh.Client, pattern string) (string
 	return result, nil
 }
 
-func (p *SSHProvider) runCommand(client *ssh.Client, cmd string) error {
+// runCommand executes cmd on the remote host. If ctx is cancelled before the
+// command exits, runCommand sends SIGTERM, waits up to sshCommandKillGrace,
+// and returns ctx.Err().
+func (p *SSHProvider) runCommand(ctx context.Context, client *ssh.Client, cmd string) error {
 	session, err := client.NewSession()
 	if err != nil {
 		return err
@@ -253,10 +262,29 @@ func (p *SSHProvider) runCommand(client *ssh.Client, cmd string) error {
 	session.Stdout = os.Stdout
 	session.Stderr = os.Stderr
 
-	return session.Run(cmd)
+	if err := session.Start(cmd); err != nil {
+		return err
+	}
+
+	done := make(chan error, 1)
+	go func() { done <- session.Wait() }()
+
+	select {
+	case err := <-done:
+		return err
+	case <-ctx.Done():
+		_ = session.Signal(ssh.SIGTERM)
+		select {
+		case <-done:
+		case <-time.After(sshCommandKillGrace):
+		}
+		return ctx.Err()
+	}
 }
 
-func (p *SSHProvider) scpDownload(client *ssh.Client, remotePath, localPath string) (int64, error) {
+// scpDownloadTo streams the remote file via `cat` into w. Returns the number of
+// bytes copied and any session error (including non-zero exit from `cat`).
+func (p *SSHProvider) scpDownloadTo(client *ssh.Client, remotePath string, w io.Writer) (int64, error) {
 	session, err := client.NewSession()
 	if err != nil {
 		return 0, err
@@ -272,20 +300,37 @@ func (p *SSHProvider) scpDownload(client *ssh.Client, remotePath, localPath stri
 		return 0, err
 	}
 
-	f, err := os.Create(localPath)
+	n, copyErr := io.Copy(w, stdout)
+	waitErr := session.Wait()
+	if copyErr != nil {
+		return n, copyErr
+	}
+	if waitErr != nil {
+		return n, waitErr
+	}
+	return n, nil
+}
+
+// remoteSize returns the size of remotePath via `stat`. Works on both GNU and
+// BSD stat (Linux uses -c, macOS/BSD uses -f).
+func (p *SSHProvider) remoteSize(client *ssh.Client, remotePath string) (int64, error) {
+	session, err := client.NewSession()
 	if err != nil {
 		return 0, err
 	}
-	defer f.Close()
+	defer session.Close()
 
-	n, err := io.Copy(f, stdout)
+	out, err := session.Output(fmt.Sprintf("stat -c '%%s' %q 2>/dev/null || stat -f '%%z' %q 2>/dev/null", remotePath, remotePath))
 	if err != nil {
 		return 0, err
 	}
-
-	if err := session.Wait(); err != nil {
-		return 0, err
+	s := strings.TrimSpace(string(out))
+	if s == "" {
+		return 0, fmt.Errorf("empty stat output for %s", remotePath)
 	}
-
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil {
+		return 0, fmt.Errorf("parsing remote size %q: %w", s, err)
+	}
 	return n, nil
 }

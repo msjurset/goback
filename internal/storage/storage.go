@@ -7,19 +7,22 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"sync"
 	"time"
 )
 
 type Manager struct {
 	baseDir string
+	mu      sync.Mutex // guards status.json read-modify-write
 }
 
 type BackupRecord struct {
 	Name      string    `json:"name"`
-	Filename  string    `json:"filename"`
+	Filename  string    `json:"filename,omitempty"`
 	Timestamp time.Time `json:"timestamp"`
-	Size      int64     `json:"size"`
+	Size      int64     `json:"size,omitempty"`
 	Error     string    `json:"error,omitempty"`
+	Attempt   int       `json:"attempt,omitempty"`
 }
 
 type StatusLog struct {
@@ -78,6 +81,9 @@ func (m *Manager) RecordBackup(rec BackupRecord) error {
 		return err
 	}
 
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	log, err := m.LoadLog()
 	if err != nil {
 		log = &StatusLog{}
@@ -90,7 +96,18 @@ func (m *Manager) RecordBackup(rec BackupRecord) error {
 		return err
 	}
 
-	return os.WriteFile(m.logPath(), data, 0o644)
+	// Atomic write: write to .tmp in the same directory, then rename. A crash
+	// before the rename leaves the prior status.json intact. Records may include
+	// error strings echoing URLs/tokens, so use 0o600.
+	tmp := m.logPath() + ".tmp"
+	if err := os.WriteFile(tmp, data, 0o600); err != nil {
+		return err
+	}
+	if err := os.Rename(tmp, m.logPath()); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return nil
 }
 
 func (m *Manager) EnforceRetention(folder string, keep int) error {

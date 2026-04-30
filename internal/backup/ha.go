@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
@@ -18,6 +18,39 @@ import (
 	"github.com/msjurset/goback/internal/config"
 	"github.com/msjurset/goback/internal/storage"
 )
+
+// HA timeouts. The parent ctx is the outer cap (set by Execute callers); these
+// guard against silent stalls on flaky connections so we fail fast and let
+// the retry layer (Stage 3) backoff cleanly.
+const (
+	haDialTimeout            = 10 * time.Second
+	haTLSHandshakeTimeout    = 15 * time.Second
+	haResponseHeaderTimeout  = 60 * time.Second
+	haIdleConnTimeout        = 90 * time.Second
+	haWSReadTimeout          = 30 * time.Second
+	haCreateTimeout          = 60 * time.Second
+)
+
+var haClient = &http.Client{
+	Transport: &http.Transport{
+		DialContext: (&net.Dialer{
+			Timeout:   haDialTimeout,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   haTLSHandshakeTimeout,
+		ResponseHeaderTimeout: haResponseHeaderTimeout,
+		IdleConnTimeout:       haIdleConnTimeout,
+	},
+}
+
+// wsRead sets a read deadline before ReadJSON so a half-dead WebSocket
+// surfaces as a deadline error instead of blocking forever.
+func wsRead(conn *websocket.Conn, msg interface{}) error {
+	if err := conn.SetReadDeadline(time.Now().Add(haWSReadTimeout)); err != nil {
+		return err
+	}
+	return conn.ReadJSON(msg)
+}
 
 type HAProvider struct{}
 
@@ -42,46 +75,37 @@ type wsSignPath struct {
 	Path string `json:"path"`
 }
 
-func (p *HAProvider) Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) error {
+func (p *HAProvider) Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) (Result, error) {
 	baseURL := strings.TrimRight(cfg.HAUrl, "/")
 
 	if opts.DryRun {
-		return p.dryRun(ctx, baseURL, cfg)
+		return Result{}, p.dryRun(ctx, baseURL, cfg)
 	}
 
-	// List existing backups (fresh connection)
 	existingIDs, err := p.listBackupIDs(ctx, baseURL, cfg.HAToken)
 	if err != nil {
-		return fmt.Errorf("listing existing backups: %w", err)
+		return Result{}, fmt.Errorf("listing existing backups: %w", err)
 	}
 
-	// Trigger backup creation via REST
 	log.Printf("[%s] triggering backup creation", cfg.Name)
 	if err := p.createBackup(ctx, baseURL, cfg.HAToken); err != nil {
-		return fmt.Errorf("creating backup: %w", err)
+		return Result{}, fmt.Errorf("creating backup: %w", err)
 	}
 
-	// Poll for new backup (reconnects on each poll)
 	log.Printf("[%s] waiting for new backup to appear", cfg.Name)
 	backupID, err := p.waitForBackup(ctx, baseURL, cfg.HAToken, existingIDs)
 	if err != nil {
-		return fmt.Errorf("waiting for backup: %w", err)
+		return Result{}, fmt.Errorf("waiting for backup: %w", err)
 	}
 
-	// Download via signed URL (fresh connection)
 	dest := store.BackupPath(cfg.Folder, cfg.Name, ".tar", cfg.Filename)
 	log.Printf("[%s] downloading backup %s -> %s", cfg.Name, backupID, dest)
 	size, err := p.downloadBackup(ctx, baseURL, cfg.HAToken, backupID, dest)
 	if err != nil {
-		return fmt.Errorf("downloading backup: %w", err)
+		return Result{}, fmt.Errorf("downloading backup: %w", err)
 	}
 
-	return store.RecordBackup(storage.BackupRecord{
-		Name:      cfg.Name,
-		Filename:  filepath.Base(dest),
-		Timestamp: time.Now(),
-		Size:      size,
-	})
+	return Result{Filename: filepath.Base(dest), Size: size}, nil
 }
 
 func (p *HAProvider) listBackupIDs(ctx context.Context, baseURL, token string) (map[string]bool, error) {
@@ -143,7 +167,7 @@ func (p *HAProvider) connect(ctx context.Context, baseURL, token string) (*webso
 
 	// Read auth_required
 	var msg wsMessage
-	if err := conn.ReadJSON(&msg); err != nil {
+	if err := wsRead(conn, &msg); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("reading auth_required: %w", err)
 	}
@@ -158,7 +182,7 @@ func (p *HAProvider) connect(ctx context.Context, baseURL, token string) (*webso
 	}
 
 	// Read auth result
-	if err := conn.ReadJSON(&msg); err != nil {
+	if err := wsRead(conn, &msg); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("reading auth result: %w", err)
 	}
@@ -186,7 +210,7 @@ func (p *HAProvider) sendAndReceive(ws *websocket.Conn, msgType string, extra ma
 
 	for {
 		var msg wsMessage
-		if err := ws.ReadJSON(&msg); err != nil {
+		if err := wsRead(ws, &msg); err != nil {
 			return nil, err
 		}
 		if msg.ID == id {
@@ -213,14 +237,18 @@ func (p *HAProvider) listBackups(ws *websocket.Conn) ([]haBackup, error) {
 }
 
 func (p *HAProvider) createBackup(ctx context.Context, baseURL, token string) error {
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, baseURL+"/api/services/hassio/backup_full", nil)
+	// Bound the trigger request — HA replies as soon as the backup is queued.
+	callCtx, cancel := context.WithTimeout(ctx, haCreateTimeout)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(callCtx, http.MethodPost, baseURL+"/api/services/hassio/backup_full", nil)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := haClient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -287,14 +315,16 @@ func (p *HAProvider) downloadBackup(ctx context.Context, baseURL, token, backupI
 		return 0, err
 	}
 
-	// Download using the signed URL (no auth header needed)
+	// Download using the signed URL (no auth header needed). The parent ctx
+	// is the outer cap; haClient.Transport.ResponseHeaderTimeout guards
+	// against the server going silent before sending headers.
 	downloadURL := baseURL + signed.Path
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, downloadURL, nil)
 	if err != nil {
 		return 0, err
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := haClient.Do(req)
 	if err != nil {
 		return 0, err
 	}
@@ -305,11 +335,12 @@ func (p *HAProvider) downloadBackup(ctx context.Context, baseURL, token, backupI
 		return 0, fmt.Errorf("download backup: HTTP %d: %s", resp.StatusCode, body)
 	}
 
-	f, err := os.Create(dest)
-	if err != nil {
-		return 0, err
+	expected := int64(-1)
+	if resp.ContentLength >= 0 {
+		expected = resp.ContentLength
 	}
-	defer f.Close()
 
-	return io.Copy(f, resp.Body)
+	return AtomicDownload(dest, expected, func(w io.Writer) (int64, error) {
+		return io.Copy(w, resp.Body)
+	})
 }

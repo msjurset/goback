@@ -1,9 +1,11 @@
 package storage
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -247,6 +249,84 @@ func TestListBackups(t *testing.T) {
 	}
 	if len(entries) != 3 {
 		t.Errorf("len(entries) = %d, want 3", len(entries))
+	}
+}
+
+func TestRecordBackupConcurrent(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir)
+
+	const writers = 50
+	const each = 10
+	var wg sync.WaitGroup
+	wg.Add(writers)
+	for i := range writers {
+		go func(i int) {
+			defer wg.Done()
+			for j := range each {
+				rec := BackupRecord{
+					Name:      "test",
+					Filename:  fmt.Sprintf("w%d-r%d.tar", i, j),
+					Timestamp: time.Now(),
+					Size:      int64(i*100 + j),
+				}
+				if err := m.RecordBackup(rec); err != nil {
+					t.Errorf("RecordBackup: %v", err)
+				}
+			}
+		}(i)
+	}
+	wg.Wait()
+
+	log, err := m.LoadLog()
+	if err != nil {
+		t.Fatalf("LoadLog: %v", err)
+	}
+	if got, want := len(log.Records), writers*each; got != want {
+		t.Fatalf("records = %d, want %d (lost-update under concurrency)", got, want)
+	}
+}
+
+func TestRecordBackupAtomicWrite(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir)
+
+	if err := m.RecordBackup(BackupRecord{Name: "first", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+
+	// A stale .tmp file should not break a subsequent write — RecordBackup
+	// should overwrite it cleanly.
+	tmp := m.logPath() + ".tmp"
+	if err := os.WriteFile(tmp, []byte("garbage"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := m.RecordBackup(BackupRecord{Name: "second", Timestamp: time.Now()}); err != nil {
+		t.Fatalf("RecordBackup with stale tmp: %v", err)
+	}
+
+	log, err := m.LoadLog()
+	if err != nil {
+		t.Fatalf("LoadLog: %v", err)
+	}
+	if len(log.Records) != 2 {
+		t.Errorf("records = %d, want 2", len(log.Records))
+	}
+}
+
+func TestRecordBackupPermissions(t *testing.T) {
+	dir := t.TempDir()
+	m := New(dir)
+	if err := m.RecordBackup(BackupRecord{Name: "x", Timestamp: time.Now()}); err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(m.logPath())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := info.Mode().Perm(); got != 0o600 {
+		t.Errorf("status.json perm = %o, want 0600", got)
 	}
 }
 

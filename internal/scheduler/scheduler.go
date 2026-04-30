@@ -9,34 +9,44 @@ import (
 
 	"github.com/msjurset/goback/internal/backup"
 	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/runlock"
 	"github.com/msjurset/goback/internal/storage"
 )
 
 type Scheduler struct {
 	cron  *cron.Cron
 	store *storage.Manager
+	coord *runlock.Coordinator
 }
 
-func New(store *storage.Manager) *Scheduler {
+func New(store *storage.Manager, coord *runlock.Coordinator) *Scheduler {
 	return &Scheduler{
 		cron:  cron.New(),
 		store: store,
+		coord: coord,
 	}
 }
 
 func (s *Scheduler) Add(cfg config.BackupConfig) error {
 	c := cfg // capture for closure
 	_, err := s.cron.AddFunc(c.Schedule, func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+		release, ok := s.coord.TryLock(c.Name)
+		if !ok {
+			log.Printf("scheduler: %s already running, skipping this fire", c.Name)
+			return
+		}
+		defer release()
+
+		// 60-minute outer cap accommodates a full retry envelope under the
+		// default policy (5 attempts × 15-minute max backoff is comfortably
+		// inside this) on top of the actual transfer time.
+		ctx, cancel := context.WithTimeout(context.Background(), 60*time.Minute)
 		defer cancel()
 
+		// backup.Execute records each attempt (including final failure) to
+		// status.json itself, so we don't double-record here.
 		if err := backup.Execute(ctx, c, s.store, backup.Options{}); err != nil {
-			log.Printf("error: backup %s failed: %v", c.Name, err)
-			_ = s.store.RecordBackup(storage.BackupRecord{
-				Name:      c.Name,
-				Timestamp: time.Now(),
-				Error:     err.Error(),
-			})
+			log.Printf("error: backup %s failed after retries: %v", c.Name, err)
 		}
 	})
 	if err != nil {

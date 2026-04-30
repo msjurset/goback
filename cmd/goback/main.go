@@ -275,7 +275,8 @@ func cmdDaemon(cfg *config.Config) {
 
 func cmdRun(cfg *config.Config, name string, dryRun bool) {
 	store := storage.New(cfg.Storage.BaseDir)
-	opts := backup.Options{DryRun: dryRun}
+	// Interactive runs go single-attempt; the daemon path is what wants retry.
+	opts := backup.Options{DryRun: dryRun, NoRetry: true}
 
 	var targets []config.BackupConfig
 	if name == "" {
@@ -309,12 +310,8 @@ func cmdRun(cfg *config.Config, name string, dryRun bool) {
 			r.status = "FAILED"
 			r.err = err
 			if !dryRun {
+				// backup.Execute already recorded the failure attempt.
 				log.Printf("backup %s failed: %v", t.Name, err)
-				_ = store.RecordBackup(storage.BackupRecord{
-					Name:      t.Name,
-					Timestamp: time.Now(),
-					Error:     err.Error(),
-				})
 			}
 		} else {
 			r.status = "OK"

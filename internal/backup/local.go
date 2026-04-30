@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/msjurset/goback/internal/config"
 	"github.com/msjurset/goback/internal/storage"
@@ -18,15 +17,15 @@ import (
 
 type LocalProvider struct{}
 
-func (p *LocalProvider) Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) error {
+func (p *LocalProvider) Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) (Result, error) {
 	if opts.DryRun {
-		return p.dryRun(ctx, cfg)
+		return Result{}, p.dryRun(ctx, cfg)
 	}
 
 	if cfg.PreCommand != "" {
 		log.Printf("[%s] running pre_command: %s", cfg.Name, cfg.PreCommand)
 		if err := p.runCommand(ctx, cfg.PreCommand); err != nil {
-			return fmt.Errorf("pre_command: %w", err)
+			return Result{}, fmt.Errorf("pre_command: %w", err)
 		}
 	}
 
@@ -34,14 +33,14 @@ func (p *LocalProvider) Run(ctx context.Context, cfg config.BackupConfig, store 
 	if localPath == "" && cfg.LocalPattern != "" {
 		resolved, err := p.resolvePattern(cfg.LocalPattern)
 		if err != nil {
-			return fmt.Errorf("resolving local_pattern: %w", err)
+			return Result{}, fmt.Errorf("resolving local_pattern: %w", err)
 		}
 		log.Printf("[%s] local_pattern matched: %s", cfg.Name, resolved)
 		localPath = resolved
 	}
 
 	if localPath == "" {
-		return fmt.Errorf("no file to back up: local_path or local_pattern must resolve to a file")
+		return Result{}, fmt.Errorf("no file to back up: local_path or local_pattern must resolve to a file")
 	}
 
 	ext := compoundExt(localPath)
@@ -50,10 +49,17 @@ func (p *LocalProvider) Run(ctx context.Context, cfg config.BackupConfig, store 
 	}
 	dest := store.BackupPath(cfg.Folder, cfg.Name, ext, cfg.Filename)
 
+	expected := int64(-1)
+	if info, err := os.Stat(localPath); err == nil {
+		expected = info.Size()
+	}
+
 	log.Printf("[%s] copying %s -> %s", cfg.Name, localPath, dest)
-	size, err := p.copyFile(localPath, dest)
+	size, err := AtomicDownload(dest, expected, func(w io.Writer) (int64, error) {
+		return p.copyFileTo(localPath, w)
+	})
 	if err != nil {
-		return fmt.Errorf("copy file: %w", err)
+		return Result{}, fmt.Errorf("copy file: %w", err)
 	}
 
 	if cfg.PostCommand != "" {
@@ -63,12 +69,7 @@ func (p *LocalProvider) Run(ctx context.Context, cfg config.BackupConfig, store 
 		}
 	}
 
-	return store.RecordBackup(storage.BackupRecord{
-		Name:      cfg.Name,
-		Filename:  filepath.Base(dest),
-		Timestamp: time.Now(),
-		Size:      size,
-	})
+	return Result{Filename: filepath.Base(dest), Size: size}, nil
 }
 
 func (p *LocalProvider) dryRun(ctx context.Context, cfg config.BackupConfig) error {
@@ -141,23 +142,11 @@ func (p *LocalProvider) resolvePattern(pattern string) (string, error) {
 	return matches[0], nil
 }
 
-func (p *LocalProvider) copyFile(src, dst string) (int64, error) {
+func (p *LocalProvider) copyFileTo(src string, w io.Writer) (int64, error) {
 	in, err := os.Open(src)
 	if err != nil {
 		return 0, err
 	}
 	defer in.Close()
-
-	out, err := os.Create(dst)
-	if err != nil {
-		return 0, err
-	}
-	defer out.Close()
-
-	n, err := io.Copy(out, in)
-	if err != nil {
-		return 0, err
-	}
-
-	return n, out.Close()
+	return io.Copy(w, in)
 }

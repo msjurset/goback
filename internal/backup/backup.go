@@ -4,17 +4,30 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"time"
 
 	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/retry"
 	"github.com/msjurset/goback/internal/storage"
 )
 
 type Options struct {
 	DryRun bool
+	// NoRetry forces a single attempt with no backoff. Used by interactive
+	// CLI commands (`goback run`, `goback now`) where retry would surprise
+	// the user; the daemon path always retries per the configured policy.
+	NoRetry bool
+}
+
+// Result is what a Provider returns on a successful run. The fields are used
+// by Execute to record the success in status.json.
+type Result struct {
+	Filename string
+	Size     int64
 }
 
 type Provider interface {
-	Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) error
+	Run(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) (Result, error)
 }
 
 func NewProvider(backupType string) (Provider, error) {
@@ -30,6 +43,10 @@ func NewProvider(backupType string) (Provider, error) {
 	}
 }
 
+// Execute runs cfg through its provider with retry/backoff. Every failed
+// attempt is logged to status.json (with Attempt set); the final successful
+// attempt records a success row. A retry.Permanent error from a provider
+// short-circuits the loop. Dry runs skip retry entirely.
 func Execute(ctx context.Context, cfg config.BackupConfig, store *storage.Manager, opts Options) error {
 	provider, err := NewProvider(cfg.Type)
 	if err != nil {
@@ -40,7 +57,6 @@ func Execute(ctx context.Context, cfg config.BackupConfig, store *storage.Manage
 	if opts.DryRun {
 		prefix = "[dry-run] "
 	}
-
 	log.Printf("%sstarting backup: %s (type: %s)", prefix, cfg.Name, cfg.Type)
 
 	if !opts.DryRun {
@@ -49,16 +65,65 @@ func Execute(ctx context.Context, cfg config.BackupConfig, store *storage.Manage
 		}
 	}
 
-	if err := provider.Run(ctx, cfg, store, opts); err != nil {
-		return err
+	if opts.DryRun {
+		if _, err := provider.Run(ctx, cfg, store, opts); err != nil {
+			return err
+		}
+		log.Printf("%sbackup complete: %s", prefix, cfg.Name)
+		return nil
 	}
 
-	if !opts.DryRun {
-		if err := store.EnforceRetention(cfg.Folder, cfg.Retention); err != nil {
-			log.Printf("warning: retention cleanup failed for %s: %v", cfg.Name, err)
+	policy := retry.Default
+	if cfg.RetryMaxAttempts > 0 {
+		policy.MaxAttempts = cfg.RetryMaxAttempts
+	}
+	if opts.NoRetry {
+		policy.MaxAttempts = 1
+	}
+
+	hook := func(attempt int, err error, next time.Duration) {
+		_ = store.RecordBackup(storage.BackupRecord{
+			Name:      cfg.Name,
+			Timestamp: time.Now(),
+			Error:     err.Error(),
+			Attempt:   attempt,
+		})
+		if next > 0 {
+			log.Printf("[%s] attempt %d failed: %v (retrying in %s)", cfg.Name, attempt, err, next.Round(time.Second))
+		} else {
+			log.Printf("[%s] attempt %d failed: %v (giving up)", cfg.Name, attempt, err)
 		}
 	}
 
-	log.Printf("%sbackup complete: %s", prefix, cfg.Name)
+	var result Result
+	var finalAttempt int
+	runErr := retry.Do(ctx, policy, hook, func(attempt int) error {
+		finalAttempt = attempt
+		r, err := provider.Run(ctx, cfg, store, opts)
+		if err != nil {
+			return err
+		}
+		result = r
+		return nil
+	})
+	if runErr != nil {
+		return runErr
+	}
+
+	if err := store.RecordBackup(storage.BackupRecord{
+		Name:      cfg.Name,
+		Filename:  result.Filename,
+		Timestamp: time.Now(),
+		Size:      result.Size,
+		Attempt:   finalAttempt,
+	}); err != nil {
+		log.Printf("warning: recording success for %s: %v", cfg.Name, err)
+	}
+
+	if err := store.EnforceRetention(cfg.Folder, cfg.Retention); err != nil {
+		log.Printf("warning: retention cleanup failed for %s: %v", cfg.Name, err)
+	}
+
+	log.Printf("%sbackup complete: %s (attempt %d)", prefix, cfg.Name, finalAttempt)
 	return nil
 }

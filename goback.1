@@ -158,6 +158,19 @@ If omitted, uses
 .TP
 .B retention
 Number of backup files to keep. Oldest are deleted first. Default: 4.
+.TP
+.B retry_max_attempts
+Override the default number of retry attempts (5) for daemon-initiated runs of
+this backup. Set to
+.B 1
+to disable retries. Interactive
+.B goback run
+and
+.B goback now
+always run a single attempt regardless of this setting. Each attempt is logged
+to status.json with an
+.B attempt
+field.
 .RE
 .PP
 For

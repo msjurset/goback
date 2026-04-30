@@ -39,6 +39,11 @@ type BackupConfig struct {
 	LocalPath     string `yaml:"local_path,omitempty"`
 	LocalPattern  string `yaml:"local_pattern,omitempty"`
 	PostCommand   string `yaml:"post_command,omitempty"`
+
+	// RetryMaxAttempts overrides retry.Default.MaxAttempts for this backup.
+	// 0 means use the package default (5). Timing knobs (initial/max/jitter)
+	// are not currently per-backup configurable; edit retry.Default if needed.
+	RetryMaxAttempts int `yaml:"retry_max_attempts,omitempty"`
 }
 
 func DefaultPath() string {

@@ -13,6 +13,7 @@ import (
 
 	"github.com/msjurset/goback/internal/catchup"
 	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/runlock"
 	"github.com/msjurset/goback/internal/scheduler"
 	"github.com/msjurset/goback/internal/storage"
 )
@@ -23,7 +24,8 @@ func Run(cfg *config.Config) error {
 
 func RunWithPath(cfg *config.Config, configPath string) error {
 	store := storage.New(cfg.Storage.BaseDir)
-	sched := scheduler.New(store)
+	coord := runlock.New()
+	sched := scheduler.New(store, coord)
 
 	for _, b := range cfg.Backups {
 		if err := sched.Add(b); err != nil {
@@ -44,7 +46,7 @@ func RunWithPath(cfg *config.Config, configPath string) error {
 	ctx, cancelBinary := watchBinary(ctx)
 	defer cancelBinary()
 
-	checker := catchup.NewChecker(cfg.Backups, store)
+	checker := catchup.NewChecker(cfg.Backups, store, coord)
 	go checker.Run(ctx)
 
 	<-ctx.Done()

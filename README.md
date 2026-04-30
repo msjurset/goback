@@ -8,6 +8,8 @@ Scheduled pull-based backup manager for home network services.
 - **SSH/SCP backups** — pulls files from remote hosts via SSH agent or per-backup SSH keys
 - **Local backups** — runs a local command to generate a backup file, then copies it into managed storage
 - **Cron scheduling** — each backup job runs on its own cron schedule
+- **Automatic retry with exponential backoff** — daemon-initiated runs retry transient failures (default 5 attempts: 30 s → 1 m → 2 m → 4 m → 8 m, with ±20 % jitter, capped at 15 m); each attempt is logged to `status.json`. Interactive `goback run`/`goback now` are single-attempt.
+- **Atomic downloads** — files are written to `<dest>.partial` and renamed only after a clean transfer with a size match, so a truncated download never replaces a known-good backup
 - **Retention management** — automatically removes old backups beyond configured count
 - **1Password integration** — resolves `op://` secret references for tokens and SSH keys
 - **Platform keychain caching** — `goback auth` resolves secrets and caches them in the system keychain (macOS Keychain, Linux secret-tool, Windows cmdkey) so the daemon runs without 1Password. On macOS, cached items are created with ACL entries trusting the goback binary, so non-interactive callers (cron, launchd) can read them without a confirmation dialog.
@@ -17,7 +19,7 @@ Scheduled pull-based backup manager for home network services.
 - **Compound extension handling** — preserves `.tar.gz` and similar multi-part extensions
 - **Dry run mode** — validates connectivity and config without transferring files
 - **Configurable filenames** — Go time format templates for output file naming
-- **Missed backup catchup** — detects backups missed during sleep/downtime and runs them on wake
+- **Missed backup catchup** — detects backups missed during sleep/downtime and runs them on wake. The lookback window is sized from each backup's own schedule cycle (clamped to 7–90 days), so monthly and quarterly schedules are caught up too. Failure records count as attempts so a permanently-broken backup isn't re-fired by catchup every 5 minutes.
 - **Config hot-reload** — daemon detects config file changes and rebuilds the schedule without restarting
 - **Binary auto-restart** — daemon exits when the binary is updated, letting launchd restart with the new version
 - **macOS launchd service** — runs as a user-level daemon with auto-restart
@@ -179,6 +181,7 @@ backups:
 | `post_command` | string | no | Command after download (remote for ssh, local for local) |
 | `local_path` | string | local | Local file to back up |
 | `local_pattern` | string | local | Glob pattern to find newest matching local file (alternative to `local_path`) |
+| `retry_max_attempts` | int | no | Override the default retry attempts (5) for this backup. Set to `1` to disable retries. |
 
 ### Authentication & Keychain
 
