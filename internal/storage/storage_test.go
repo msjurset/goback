@@ -254,7 +254,7 @@ func TestListBackups(t *testing.T) {
 
 func TestRecordBackupConcurrent(t *testing.T) {
 	dir := t.TempDir()
-	m := New(dir)
+	m := NewWithCap(dir, 0) // disable cap so we can assert no lost-updates
 
 	const writers = 50
 	const each = 10
@@ -313,6 +313,112 @@ func TestRecordBackupAtomicWrite(t *testing.T) {
 	if len(log.Records) != 2 {
 		t.Errorf("records = %d, want 2", len(log.Records))
 	}
+}
+
+func TestTrimRecordsKeepsNewestPerName(t *testing.T) {
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	mk := func(name string, hourOffset int) BackupRecord {
+		return BackupRecord{Name: name, Timestamp: base.Add(time.Duration(hourOffset) * time.Hour)}
+	}
+
+	// 5 "alpha" records and 3 "beta" records, append-ordered (oldest first).
+	in := []BackupRecord{
+		mk("alpha", 0), mk("alpha", 1), mk("alpha", 2), mk("alpha", 3), mk("alpha", 4),
+		mk("beta", 0), mk("beta", 1), mk("beta", 2),
+	}
+
+	got := trimRecords(in, 2) // keep the 2 newest of each name
+	if len(got) != 4 {
+		t.Fatalf("len = %d, want 4 (2 alpha + 2 beta)", len(got))
+	}
+
+	byName := map[string][]int{}
+	for _, r := range got {
+		hours := int(r.Timestamp.Sub(base).Hours())
+		byName[r.Name] = append(byName[r.Name], hours)
+	}
+	// alpha keeps the 3,4 hour offsets (newest two); beta keeps 1,2.
+	if want := []int{3, 4}; !equalInts(byName["alpha"], want) {
+		t.Errorf("alpha kept = %v, want %v", byName["alpha"], want)
+	}
+	if want := []int{1, 2}; !equalInts(byName["beta"], want) {
+		t.Errorf("beta kept = %v, want %v", byName["beta"], want)
+	}
+}
+
+func TestTrimRecordsZeroDisablesCap(t *testing.T) {
+	in := []BackupRecord{{Name: "a"}, {Name: "a"}, {Name: "a"}}
+	got := trimRecords(in, 0)
+	if len(got) != 3 {
+		t.Errorf("perName=0 should leave records untouched; got %d", len(got))
+	}
+}
+
+func TestTrimRecordsUnderCapNoChange(t *testing.T) {
+	in := []BackupRecord{
+		{Name: "a", Timestamp: time.Unix(1, 0)},
+		{Name: "a", Timestamp: time.Unix(2, 0)},
+	}
+	got := trimRecords(in, 50)
+	if len(got) != 2 {
+		t.Errorf("under cap should be untouched; got %d", len(got))
+	}
+}
+
+func TestRecordBackupAppliesCap(t *testing.T) {
+	dir := t.TempDir()
+	m := NewWithCap(dir, 3)
+
+	for i := range 10 {
+		rec := BackupRecord{
+			Name:      "alpha",
+			Timestamp: time.Unix(int64(i), 0),
+			Filename:  fmt.Sprintf("alpha-%d.tar", i),
+		}
+		if err := m.RecordBackup(rec); err != nil {
+			t.Fatalf("RecordBackup: %v", err)
+		}
+	}
+
+	log, err := m.LoadLog()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(log.Records) != 3 {
+		t.Fatalf("records = %d, want 3 (capped)", len(log.Records))
+	}
+	// The kept records must be the three newest (timestamps 7, 8, 9).
+	for i, r := range log.Records {
+		want := time.Unix(int64(7+i), 0)
+		if !r.Timestamp.Equal(want) {
+			t.Errorf("record[%d] timestamp = %v, want %v", i, r.Timestamp, want)
+		}
+	}
+}
+
+func TestRecordBackupNoCapWhenZero(t *testing.T) {
+	dir := t.TempDir()
+	m := NewWithCap(dir, 0) // 0 disables cap
+
+	for i := range 5 {
+		_ = m.RecordBackup(BackupRecord{Name: "x", Timestamp: time.Unix(int64(i), 0)})
+	}
+	log, _ := m.LoadLog()
+	if len(log.Records) != 5 {
+		t.Errorf("records = %d, want 5 (no cap)", len(log.Records))
+	}
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func TestRecordBackupPermissions(t *testing.T) {

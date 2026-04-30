@@ -19,6 +19,10 @@ type Config struct {
 type StorageConfig struct {
 	BaseDir string `yaml:"base_dir"`
 	LogFile string `yaml:"log_file"`
+	// RecordsPerBackup caps how many history records per backup name are
+	// kept in status.json. 0 (unset) uses storage.DefaultRecordsPerBackup.
+	// Set to a negative value to disable the cap entirely.
+	RecordsPerBackup int `yaml:"records_per_backup,omitempty"`
 }
 
 type BackupConfig struct {

@@ -15,7 +15,6 @@ import (
 	"github.com/msjurset/goback/internal/config"
 	"github.com/msjurset/goback/internal/credentials"
 	"github.com/msjurset/goback/internal/daemon"
-	"github.com/msjurset/goback/internal/storage"
 )
 
 var version = "dev"
@@ -274,7 +273,7 @@ func cmdDaemon(cfg *config.Config) {
 }
 
 func cmdRun(cfg *config.Config, name string, dryRun bool) {
-	store := storage.New(cfg.Storage.BaseDir)
+	store := daemon.NewStorage(cfg)
 	// Interactive runs go single-attempt; the daemon path is what wants retry.
 	opts := backup.Options{DryRun: dryRun, NoRetry: true}
 
@@ -352,7 +351,7 @@ func cmdList(cfg *config.Config) {
 }
 
 func cmdStatus(cfg *config.Config) {
-	store := storage.New(cfg.Storage.BaseDir)
+	store := daemon.NewStorage(cfg)
 
 	sl, err := store.LoadLog()
 	if err != nil {
@@ -395,7 +394,7 @@ func cmdLast(cfg *config.Config, name string, epoch bool) {
 		os.Exit(1)
 	}
 
-	store := storage.New(cfg.Storage.BaseDir)
+	store := daemon.NewStorage(cfg)
 	sl, err := store.LoadLog()
 	if err != nil {
 		log.Fatalf("loading status: %v", err)

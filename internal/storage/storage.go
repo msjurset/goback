@@ -12,9 +12,13 @@ import (
 )
 
 type Manager struct {
-	baseDir string
-	mu      sync.Mutex // guards status.json read-modify-write
+	baseDir          string
+	recordsPerBackup int
+	mu               sync.Mutex // guards status.json read-modify-write
 }
+
+// DefaultRecordsPerBackup is the per-name cap applied when none is configured.
+const DefaultRecordsPerBackup = 200
 
 type BackupRecord struct {
 	Name      string    `json:"name"`
@@ -30,7 +34,16 @@ type StatusLog struct {
 }
 
 func New(baseDir string) *Manager {
-	return &Manager{baseDir: baseDir}
+	return &Manager{baseDir: baseDir, recordsPerBackup: DefaultRecordsPerBackup}
+}
+
+// NewWithCap returns a Manager that keeps at most recordsPerBackup history
+// records per backup name. A non-positive value disables the cap.
+func NewWithCap(baseDir string, recordsPerBackup int) *Manager {
+	if recordsPerBackup <= 0 {
+		recordsPerBackup = 0 // 0 means "no cap"
+	}
+	return &Manager{baseDir: baseDir, recordsPerBackup: recordsPerBackup}
 }
 
 func (m *Manager) BackupDir(folder string) string {
@@ -90,6 +103,7 @@ func (m *Manager) RecordBackup(rec BackupRecord) error {
 	}
 
 	log.Records = append(log.Records, rec)
+	log.Records = trimRecords(log.Records, m.recordsPerBackup)
 
 	data, err := json.MarshalIndent(log, "", "  ")
 	if err != nil {
@@ -149,6 +163,48 @@ func (m *Manager) EnforceRetention(folder string, keep int) error {
 	}
 
 	return nil
+}
+
+// trimRecords keeps the most recent perName records for each backup name and
+// drops the rest. Original ordering of the kept records is preserved so the
+// status log stays append-ordered. perName <= 0 disables trimming.
+func trimRecords(records []BackupRecord, perName int) []BackupRecord {
+	if perName <= 0 || len(records) == 0 {
+		return records
+	}
+
+	// Index records by name, sorted by timestamp newest-first, kept indices.
+	byName := make(map[string][]int, 8)
+	for i, r := range records {
+		byName[r.Name] = append(byName[r.Name], i)
+	}
+
+	keep := make(map[int]struct{}, len(records))
+	for _, idxs := range byName {
+		if len(idxs) <= perName {
+			for _, i := range idxs {
+				keep[i] = struct{}{}
+			}
+			continue
+		}
+		sort.Slice(idxs, func(a, b int) bool {
+			return records[idxs[a]].Timestamp.After(records[idxs[b]].Timestamp)
+		})
+		for _, i := range idxs[:perName] {
+			keep[i] = struct{}{}
+		}
+	}
+
+	if len(keep) == len(records) {
+		return records
+	}
+	out := make([]BackupRecord, 0, len(keep))
+	for i, r := range records {
+		if _, ok := keep[i]; ok {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 func (m *Manager) ListBackups(folder string) ([]os.DirEntry, error) {

@@ -128,6 +128,15 @@ Path to the application log file. Supports
 .B ~/
 expansion.
 .TP
+.B storage.records_per_backup
+Per-backup-name cap on
+.B status.json
+history records. The newest records are retained on every write. Default
+.BR 200 .
+Set to
+.B -1
+to disable the cap entirely.
+.TP
 .B backups
 A list of backup job definitions. Each job supports these fields:
 .RS

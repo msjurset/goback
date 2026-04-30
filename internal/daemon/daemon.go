@@ -23,7 +23,7 @@ func Run(cfg *config.Config) error {
 }
 
 func RunWithPath(cfg *config.Config, configPath string) error {
-	store := storage.New(cfg.Storage.BaseDir)
+	store := NewStorage(cfg)
 	coord := runlock.New()
 	sched := scheduler.New(store, coord)
 
@@ -57,6 +57,19 @@ func RunWithPath(cfg *config.Config, configPath string) error {
 
 	log.Println("daemon stopped")
 	return nil
+}
+
+// NewStorage builds a storage.Manager honoring cfg.Storage.RecordsPerBackup.
+// Unset (zero) → default cap; negative → no cap.
+func NewStorage(cfg *config.Config) *storage.Manager {
+	switch {
+	case cfg.Storage.RecordsPerBackup == 0:
+		return storage.New(cfg.Storage.BaseDir)
+	case cfg.Storage.RecordsPerBackup < 0:
+		return storage.NewWithCap(cfg.Storage.BaseDir, 0) // 0 = no cap
+	default:
+		return storage.NewWithCap(cfg.Storage.BaseDir, cfg.Storage.RecordsPerBackup)
+	}
 }
 
 // watchConfig monitors the config file for changes and rebuilds the scheduler.

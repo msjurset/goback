@@ -120,6 +120,7 @@ Config lives at `~/.config/goback/config.yaml`:
 storage:
   base_dir: ~/backups
   log_file: ~/Library/Logs/goback.log
+  # records_per_backup: 200   # optional; default 200, set to -1 to disable
 
 backups:
   - name: homeassistant
@@ -182,6 +183,14 @@ backups:
 | `local_path` | string | local | Local file to back up |
 | `local_pattern` | string | local | Glob pattern to find newest matching local file (alternative to `local_path`) |
 | `retry_max_attempts` | int | no | Override the default retry attempts (5) for this backup. Set to `1` to disable retries. |
+
+#### Storage Config Fields
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `base_dir` | string | yes | Where backup files and `status.json` live |
+| `log_file` | string | no | Daemon log file path |
+| `records_per_backup` | int | no | Per-backup-name cap on `status.json` history records. Default 200. Set to `-1` to disable the cap. |
 
 ### Authentication & Keychain
 
