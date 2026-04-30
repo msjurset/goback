@@ -107,6 +107,12 @@ func Execute(ctx context.Context, cfg config.BackupConfig, store *storage.Manage
 		return nil
 	})
 	if runErr != nil {
+		// NoRetry runs are interactive — the user is staring at the error.
+		// Daemon-driven runs fire the notify hook so failures don't get lost
+		// in the log when nobody's watching.
+		if !opts.NoRetry {
+			notifyFailure(cfg, runErr, finalAttempt)
+		}
 		return runErr
 	}
 

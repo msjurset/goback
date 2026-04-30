@@ -137,6 +137,23 @@ Set to
 .B -1
 to disable the cap entirely.
 .TP
+.B notifications.failure_command
+Shell command (run via
+.BR "sh -c" )
+when a backup fails after exhausting all retry attempts. The command
+receives these environment variables:
+.B GOBACK_BACKUP_NAME ,
+.B GOBACK_BACKUP_TYPE ,
+.B GOBACK_ERROR ,
+and
+.BR GOBACK_ATTEMPTS .
+Bounded by a 30 second timeout. Skipped on dry runs and on interactive
+.B goback run / goback now
+commands. A per-backup
+.B notify_command
+overrides this global default; set the per-backup value to a single space
+to opt that backup out.
+.TP
 .B backups
 A list of backup job definitions. Each job supports these fields:
 .RS
@@ -180,6 +197,24 @@ always run a single attempt regardless of this setting. Each attempt is logged
 to status.json with an
 .B attempt
 field.
+.TP
+.B notify_command
+Per-backup override for
+.BR notifications.failure_command .
+Set to a single space to opt this backup out of notifications when a global
+.B failure_command
+is configured.
+.TP
+.B insecure_skip_host_key
+SSH only. Disables host key verification for this backup. Default
+.BR false :
+keys are verified against
+.B ~/.ssh/known_hosts
+with trust-on-first-use semantics. The first connection to a host appends
+its key and logs the SHA-256 fingerprint; subsequent connections must
+match. Set to
+.B true
+to fall back to the pre-v1.7 ignore-host-key behavior.
 .RE
 .PP
 For

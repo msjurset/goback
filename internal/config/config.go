@@ -12,8 +12,18 @@ import (
 )
 
 type Config struct {
-	Storage StorageConfig  `yaml:"storage"`
-	Backups []BackupConfig `yaml:"backups"`
+	Storage       StorageConfig       `yaml:"storage"`
+	Notifications NotificationsConfig `yaml:"notifications,omitempty"`
+	Backups       []BackupConfig      `yaml:"backups"`
+}
+
+type NotificationsConfig struct {
+	// FailureCommand runs (via sh -c) when a backup fails after all retry
+	// attempts. The following env vars are set: GOBACK_BACKUP_NAME,
+	// GOBACK_BACKUP_TYPE, GOBACK_ERROR, GOBACK_ATTEMPTS. Bounded by a 30s
+	// timeout to avoid stalling the daemon. Per-backup notify_command takes
+	// precedence over this global default.
+	FailureCommand string `yaml:"failure_command,omitempty"`
 }
 
 type StorageConfig struct {
@@ -48,6 +58,16 @@ type BackupConfig struct {
 	// 0 means use the package default (5). Timing knobs (initial/max/jitter)
 	// are not currently per-backup configurable; edit retry.Default if needed.
 	RetryMaxAttempts int `yaml:"retry_max_attempts,omitempty"`
+
+	// NotifyCommand overrides Config.Notifications.FailureCommand for this
+	// backup. Set to a single space (" ") to opt this backup out of
+	// notifications when a global failure_command is set. Empty inherits.
+	NotifyCommand string `yaml:"notify_command,omitempty"`
+
+	// InsecureSkipHostKey disables SSH host key verification for this
+	// backup, matching pre-v1.7 behavior. Default false: known_hosts is
+	// checked with trust-on-first-use semantics.
+	InsecureSkipHostKey bool `yaml:"insecure_skip_host_key,omitempty"`
 }
 
 func DefaultPath() string {
@@ -127,6 +147,13 @@ func (c *Config) validate() error {
 		}
 		if b.Retention <= 0 {
 			c.Backups[i].Retention = 4
+		}
+		// Inherit global failure_command unless the backup specified its own.
+		// A single-space notify_command means "explicitly opt out" — reset to "".
+		if b.NotifyCommand == "" && c.Notifications.FailureCommand != "" {
+			c.Backups[i].NotifyCommand = c.Notifications.FailureCommand
+		} else if strings.TrimSpace(b.NotifyCommand) == "" {
+			c.Backups[i].NotifyCommand = ""
 		}
 
 		switch b.Type {

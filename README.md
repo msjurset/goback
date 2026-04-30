@@ -5,11 +5,12 @@ Scheduled pull-based backup manager for home network services.
 ## Features
 
 - **Home Assistant API backups** — triggers backup creation via REST, lists/downloads via WebSocket API, fetches via signed URLs
-- **SSH/SCP backups** — pulls files from remote hosts via SSH agent or per-backup SSH keys
+- **SSH/SCP backups** — pulls files from remote hosts via SSH agent or per-backup SSH keys; verifies host keys against `~/.ssh/known_hosts` with trust-on-first-use semantics
 - **Local backups** — runs a local command to generate a backup file, then copies it into managed storage
 - **Cron scheduling** — each backup job runs on its own cron schedule
 - **Automatic retry with exponential backoff** — daemon-initiated runs retry transient failures (default 5 attempts: 30 s → 1 m → 2 m → 4 m → 8 m, with ±20 % jitter, capped at 15 m); each attempt is logged to `status.json`. Interactive `goback run`/`goback now` are single-attempt.
 - **Atomic downloads** — files are written to `<dest>.partial` and renamed only after a clean transfer with a size match, so a truncated download never replaces a known-good backup
+- **Failure notifications** — optional `notify_command` runs (per-backup or globally) when a backup fails after all retries; receives `GOBACK_BACKUP_NAME`, `GOBACK_BACKUP_TYPE`, `GOBACK_ERROR`, `GOBACK_ATTEMPTS` as env vars. Bounded by a 30 s timeout so a hung script can't stall the daemon.
 - **Retention management** — automatically removes old backups beyond configured count
 - **1Password integration** — resolves `op://` secret references for tokens and SSH keys
 - **Platform keychain caching** — `goback auth` resolves secrets and caches them in the system keychain (macOS Keychain, Linux secret-tool, Windows cmdkey) so the daemon runs without 1Password. On macOS, cached items are created with ACL entries trusting the goback binary, so non-interactive callers (cron, launchd) can read them without a confirmation dialog.
@@ -183,6 +184,8 @@ backups:
 | `local_path` | string | local | Local file to back up |
 | `local_pattern` | string | local | Glob pattern to find newest matching local file (alternative to `local_path`) |
 | `retry_max_attempts` | int | no | Override the default retry attempts (5) for this backup. Set to `1` to disable retries. |
+| `notify_command` | string | no | Shell command to run on retry-exhausted failure for this backup. Overrides the global `notifications.failure_command`. Set to `" "` (single space) to explicitly opt out when a global default is set. |
+| `insecure_skip_host_key` | bool | no | SSH only. Disables host key verification, matching pre-v1.7 behavior. Default `false`: keys are checked against `~/.ssh/known_hosts` with trust-on-first-use. |
 
 #### Storage Config Fields
 
@@ -191,6 +194,35 @@ backups:
 | `base_dir` | string | yes | Where backup files and `status.json` live |
 | `log_file` | string | no | Daemon log file path |
 | `records_per_backup` | int | no | Per-backup-name cap on `status.json` history records. Default 200. Set to `-1` to disable the cap. |
+
+#### Notifications
+
+```yaml
+notifications:
+  failure_command: |
+    osascript -e "display notification \"$GOBACK_BACKUP_NAME failed: $GOBACK_ERROR\" with title \"goback\""
+```
+
+When a backup fails after all retry attempts, goback runs `failure_command` via `sh -c` with these environment variables:
+
+| Variable | Value |
+|----------|-------|
+| `GOBACK_BACKUP_NAME` | The `name` of the failed backup |
+| `GOBACK_BACKUP_TYPE` | `ha_api`, `ssh`, or `local` |
+| `GOBACK_ERROR` | The final error message |
+| `GOBACK_ATTEMPTS` | How many attempts were made before giving up |
+
+The command is bounded by a 30-second timeout. A non-zero exit is logged but does not affect the backup outcome. A per-backup `notify_command` overrides the global `failure_command`; set the per-backup field to `" "` (a single space) to opt that backup out when a global default is configured. Notifications are skipped on dry runs and on interactive `goback run`/`goback now` commands.
+
+### SSH Host Key Verification
+
+Starting with v1.7, SSH backups verify the remote host's key against `~/.ssh/known_hosts` using trust-on-first-use:
+
+- **First connection to a host**: the key is appended to `known_hosts` and accepted; the SHA-256 fingerprint is logged so you can verify it.
+- **Subsequent connections**: the key must match. A mismatch (host reinstalled, MITM, etc.) fails the backup with a clear error.
+- **Skipping verification**: set `insecure_skip_host_key: true` on a backup to fall back to the pre-v1.7 ignore-host-key behavior. Use sparingly.
+
+If `~/.ssh/known_hosts` doesn't exist, goback creates it (with `0o600` perms). Run `ssh <host>` once before scheduling a backup if you want to verify the key interactively before TOFU acceptance.
 
 ### Authentication & Keychain
 

@@ -126,6 +126,129 @@ backups:
 	}
 }
 
+func TestNotificationsInheritance(t *testing.T) {
+	tests := []struct {
+		name              string
+		yaml              string
+		wantNotifyByName  map[string]string
+	}{
+		{
+			name: "global default propagates to all backups",
+			yaml: `storage:
+  base_dir: /tmp/backups
+notifications:
+  failure_command: "/usr/local/bin/notify-failure"
+backups:
+  - name: a
+    type: ssh
+    schedule: "0 3 * * 0"
+    host: a.local
+    user: pi
+    remote_path: /tmp/a.tar
+  - name: b
+    type: ssh
+    schedule: "0 4 * * 0"
+    host: b.local
+    user: pi
+    remote_path: /tmp/b.tar
+`,
+			wantNotifyByName: map[string]string{
+				"a": "/usr/local/bin/notify-failure",
+				"b": "/usr/local/bin/notify-failure",
+			},
+		},
+		{
+			name: "per-backup overrides global",
+			yaml: `storage:
+  base_dir: /tmp/backups
+notifications:
+  failure_command: "/global"
+backups:
+  - name: a
+    type: ssh
+    schedule: "0 3 * * 0"
+    host: a.local
+    user: pi
+    remote_path: /tmp/a.tar
+    notify_command: "/specific-for-a"
+  - name: b
+    type: ssh
+    schedule: "0 4 * * 0"
+    host: b.local
+    user: pi
+    remote_path: /tmp/b.tar
+`,
+			wantNotifyByName: map[string]string{
+				"a": "/specific-for-a",
+				"b": "/global",
+			},
+		},
+		{
+			name: "single-space notify_command opts out of global",
+			yaml: `storage:
+  base_dir: /tmp/backups
+notifications:
+  failure_command: "/global"
+backups:
+  - name: a
+    type: ssh
+    schedule: "0 3 * * 0"
+    host: a.local
+    user: pi
+    remote_path: /tmp/a.tar
+    notify_command: " "
+  - name: b
+    type: ssh
+    schedule: "0 4 * * 0"
+    host: b.local
+    user: pi
+    remote_path: /tmp/b.tar
+`,
+			wantNotifyByName: map[string]string{
+				"a": "",
+				"b": "/global",
+			},
+		},
+		{
+			name: "no global, no per-backup -> empty",
+			yaml: `storage:
+  base_dir: /tmp/backups
+backups:
+  - name: a
+    type: ssh
+    schedule: "0 3 * * 0"
+    host: a.local
+    user: pi
+    remote_path: /tmp/a.tar
+`,
+			wantNotifyByName: map[string]string{"a": ""},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfgPath := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(cfgPath, []byte(tt.yaml), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			cfg, err := Load(cfgPath)
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			for _, b := range cfg.Backups {
+				want, ok := tt.wantNotifyByName[b.Name]
+				if !ok {
+					continue
+				}
+				if b.NotifyCommand != want {
+					t.Errorf("backup %q NotifyCommand = %q, want %q", b.Name, b.NotifyCommand, want)
+				}
+			}
+		})
+	}
+}
+
 func TestLoadMissingFile(t *testing.T) {
 	_, err := Load("/nonexistent/config.yaml")
 	if err == nil {

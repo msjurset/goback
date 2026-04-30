@@ -177,10 +177,15 @@ func (p *SSHProvider) connect(cfg config.BackupConfig) (*ssh.Client, error) {
 		authMethods = append(authMethods, ssh.PublicKeysCallback(agentClient.Signers))
 	}
 
+	hkCallback, err := hostKeyCallback(cfg.InsecureSkipHostKey)
+	if err != nil {
+		return nil, fmt.Errorf("preparing host key verification: %w", err)
+	}
+
 	sshConfig := &ssh.ClientConfig{
 		User:            user,
 		Auth:            authMethods,
-		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+		HostKeyCallback: hkCallback,
 		Timeout:         30 * time.Second,
 	}
 
