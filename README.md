@@ -23,6 +23,7 @@ Scheduled pull-based backup manager for home network services.
 - **Missed backup catchup** — detects backups missed during sleep/downtime and runs them on wake. The lookback window is sized from each backup's own schedule cycle (clamped to 7–90 days), so monthly and quarterly schedules are caught up too. Failure records count as attempts so a permanently-broken backup isn't re-fired by catchup every 5 minutes.
 - **Config hot-reload** — daemon detects config file changes and rebuilds the schedule without restarting
 - **Binary auto-restart** — daemon exits when the binary is updated, letting launchd restart with the new version
+- **Single-daemon enforcement** — `goback daemon` probes the control socket on startup and refuses to run alongside an already-live daemon, while still cleaning up a stale socket from a crashed instance
 - **macOS launchd service** — runs as a user-level daemon with auto-restart
 
 ## Install

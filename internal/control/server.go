@@ -111,17 +111,31 @@ func (s *Server) currentConfig() *config.Config {
 	return s.cfg
 }
 
+// ErrDaemonAlreadyRunning is returned by Start when another live daemon is
+// already bound to the control socket. Callers should treat this as fatal
+// rather than continuing — two schedulers fighting over the same backups
+// duplicates work and races on storage.
+var ErrDaemonAlreadyRunning = errors.New("another goback daemon is already running")
+
 // Start binds the socket, applies 0600 permissions, and begins accepting
 // connections in a background goroutine. When ctx is cancelled the listener
 // is closed and the socket file removed.
+//
+// If the socket file already exists, Start probes it: a live daemon means
+// hard fail (ErrDaemonAlreadyRunning); a stale file from a previously
+// crashed daemon is unlinked and we proceed.
 func (s *Server) Start(ctx context.Context) error {
 	if err := os.MkdirAll(filepath.Dir(s.socketPath), 0o755); err != nil {
 		return fmt.Errorf("creating socket dir: %w", err)
 	}
-	// A stale socket from a previously crashed daemon would prevent bind;
-	// removing it preemptively is safe because filesystem perms (0600) gate
-	// who can connect, and only the user's daemon process writes here.
-	_ = os.Remove(s.socketPath)
+	if _, err := os.Stat(s.socketPath); err == nil {
+		if probeLiveDaemon(s.socketPath) {
+			return fmt.Errorf("%w (socket %s)", ErrDaemonAlreadyRunning, s.socketPath)
+		}
+		// Stale socket from a crashed daemon — safe to unlink because
+		// filesystem perms (0600) gate who can write here.
+		_ = os.Remove(s.socketPath)
+	}
 
 	l, err := net.Listen("unix", s.socketPath)
 	if err != nil {
@@ -142,6 +156,27 @@ func (s *Server) Start(ctx context.Context) error {
 
 	go s.acceptLoop()
 	return nil
+}
+
+// probeLiveDaemon tries a short ping over an existing socket file to
+// distinguish a running daemon from a stale unix socket left by a crash.
+// Returns true only on a clean ping/pong; any error path is treated as
+// "stale" so a permissions or partial-write hiccup doesn't lock us out.
+func probeLiveDaemon(path string) bool {
+	conn, err := net.DialTimeout("unix", path, 500*time.Millisecond)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+	if err := json.NewEncoder(conn).Encode(Request{Cmd: "ping"}); err != nil {
+		return false
+	}
+	var resp Response
+	if err := json.NewDecoder(conn).Decode(&resp); err != nil {
+		return false
+	}
+	return resp.Type == "result" && resp.Exit == 0
 }
 
 func (s *Server) acceptLoop() {

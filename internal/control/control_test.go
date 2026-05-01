@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -108,6 +109,55 @@ func TestServerRunUnknownName(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), `"nope"`) {
 		t.Fatalf("expected stderr to mention the missing name; got %q", stderr.String())
+	}
+}
+
+func TestStartRejectsLive(t *testing.T) {
+	dir := t.TempDir()
+	sockPath := filepath.Join(dir, "control.sock")
+
+	tee := NewLogTee()
+	first := NewServer(sockPath, &config.Config{}, nil, runlock.New(), tee)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := first.Start(ctx); err != nil {
+		t.Fatalf("first Start: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	second := NewServer(sockPath, &config.Config{}, nil, runlock.New(), NewLogTee())
+	err := second.Start(context.Background())
+	if err == nil {
+		t.Fatal("expected second Start to fail with a live daemon already bound")
+	}
+	if !errorsIs(err, ErrDaemonAlreadyRunning) {
+		t.Fatalf("error = %v, want wrapping ErrDaemonAlreadyRunning", err)
+	}
+
+	exit, err := Run(sockPath, Request{Cmd: "ping"}, &bytes.Buffer{})
+	if err != nil || exit != 0 {
+		t.Fatalf("first daemon should still be live after rejected duplicate; ping exit=%d err=%v", exit, err)
+	}
+}
+
+func TestStartReplacesStale(t *testing.T) {
+	dir := t.TempDir()
+	sockPath := filepath.Join(dir, "control.sock")
+	if err := os.WriteFile(sockPath, nil, 0o600); err != nil {
+		t.Fatalf("seeding stale socket: %v", err)
+	}
+
+	srv := NewServer(sockPath, &config.Config{}, nil, runlock.New(), NewLogTee())
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	if err := srv.Start(ctx); err != nil {
+		t.Fatalf("Start over stale socket: %v", err)
+	}
+	time.Sleep(20 * time.Millisecond)
+
+	exit, err := Run(sockPath, Request{Cmd: "ping"}, &bytes.Buffer{})
+	if err != nil || exit != 0 {
+		t.Fatalf("ping after stale-socket replacement: exit=%d err=%v", exit, err)
 	}
 }
 

@@ -1,4 +1,4 @@
-.TH GOBACK 1 "March 2026" "version 1.3.0" "User Commands"
+.TH GOBACK 1 "May 2026" "version 1.9.0" "User Commands"
 .SH NAME
 goback \- scheduled pull-based backup manager for home network services
 .SH SYNOPSIS
@@ -73,6 +73,15 @@ previous configuration is kept and a warning is logged. The daemon also
 monitors its own binary; when the binary is replaced (e.g., after
 \fBmake deploy\fR), the daemon exits so that launchd can restart it with
 the new version.
+.IP
+Only one daemon may bind the control socket
+.RB ( ~/.config/goback/control.sock )
+at a time. If
+.B goback daemon
+is invoked while another live daemon is already bound, the second
+invocation exits non-zero rather than running a parallel scheduler that
+would race the first on storage and retention. A stale socket file left
+by a previously crashed daemon is detected via a probe and replaced.
 .TP
 .B run \fR[\fB--local\fR] [\fIname\fR]
 Manually trigger a backup. If

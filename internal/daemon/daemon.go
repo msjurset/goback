@@ -2,6 +2,7 @@ package daemon
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -34,19 +35,21 @@ func RunWithPath(cfg *config.Config, configPath string, tee *control.LogTee) err
 		}
 	}
 
-	sched.Start()
-	log.Printf("goback daemon started with %d backup jobs", len(cfg.Backups))
-
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	// Control server lets `goback run` (typically invoked from cron or
 	// launchd contexts that lack keychain access) delegate execution to the
-	// daemon, which holds resolved secrets in memory.
+	// daemon, which holds resolved secrets in memory. Bind it BEFORE starting
+	// the scheduler so a duplicate-daemon detection aborts cleanly without
+	// having spun up cron tickers that would race the live daemon's runs.
 	ctrlSrv := control.NewServer(control.DefaultSocketPath(), cfg, store, coord, tee)
 	if err := ctrlSrv.Start(ctx); err != nil {
-		log.Printf("control server: %v (continuing without socket)", err)
+		return fmt.Errorf("control server: %w", err)
 	}
+
+	sched.Start()
+	log.Printf("goback daemon started with %d backup jobs", len(cfg.Backups))
 
 	// Watch config file for changes
 	go watchConfig(ctx, configPath, sched, store, ctrlSrv)

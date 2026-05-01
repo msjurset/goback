@@ -34,13 +34,18 @@ _goback() {
                 run|dry-run)
                     _arguments \
                         '--local[Run in-process instead of delegating to the daemon]' \
-                        '*: :_goback_backup_names'
+                        ':name:_goback_backup_names'
                     ;;
                 now)
                     _arguments '--local[Run in-process instead of delegating to the daemon]'
                     ;;
-                clear|last)
+                clear)
                     _goback_backup_names
+                    ;;
+                last)
+                    _arguments \
+                        {-e,--epoch}'[Print Unix seconds instead of RFC 3339]' \
+                        ':name:_goback_backup_names'
                     ;;
                 auth)
                     _arguments '--clear[Remove cached secrets from keychain]'

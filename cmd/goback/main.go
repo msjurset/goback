@@ -161,25 +161,30 @@ func usage() {
 	fmt.Fprintf(os.Stderr, `Usage: goback <command> [args]
 
 Commands:
-  init              Create default config file
-  auth              Resolve and cache op:// secrets in system keychain
-  auth --clear      Remove cached secrets from system keychain
-  clear [name]      Remove cached secrets from keychain (all if no name given)
-  completion <shell> Output shell completion script (bash, zsh)
-  daemon            Run the backup scheduler (foreground)
-  run [name]        Manually trigger one or all backups (delegates to daemon)
-  now               Run all backups immediately (delegates to daemon)
-  dry-run [name]    Simulate backups (connect but don't transfer)
+  init                  Create default config file
+  auth                  Resolve and cache op:// secrets in system keychain
+  auth --clear          Remove cached secrets from system keychain
+  clear [name]          Remove cached secrets from keychain (all if no name given)
+  completion <shell>    Output shell completion script (bash, zsh)
+  daemon                Run the backup scheduler (foreground)
+  run [name]            Manually trigger one or all backups (delegates to daemon)
+  now                   Run all backups immediately (delegates to daemon)
+  dry-run [name]        Simulate backups (connect but don't transfer)
+  list                  Show configured backup jobs
+  status                Show recent backup history
+  last <name>           Print timestamp of last successful backup
+  version, -v           Print version information
+  help, -h              Show this help
 
 Flags for run/now/dry-run:
-  --local           Run in-process instead of delegating to the daemon.
-                    Use when the daemon isn't running or for debugging.
-                    From cron/launchd, omit this flag so the daemon (which
-                    has keychain access in the user GUI session) handles
-                    the run.
-  list              Show configured backup jobs
-  status            Show recent backup history
-  last <name>       Print timestamp of last successful backup (RFC3339; use --epoch for Unix seconds)
+  --local               Run in-process instead of delegating to the daemon.
+                        Use when the daemon isn't running or for debugging.
+                        From cron/launchd, omit this flag so the daemon (which
+                        has keychain access in the user GUI session) handles
+                        the run.
+
+Flags for last:
+  --epoch, -e           Print Unix seconds instead of RFC 3339.
 
 Service management (macOS):
   launchctl load ~/Library/LaunchAgents/com.goback.daemon.plist
