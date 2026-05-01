@@ -13,27 +13,19 @@ _goback() {
     fi
 
     case "$prev" in
-        run|dry-run|clear)
+        run|dry-run)
             local names=""
             if [[ -f ~/.config/goback/config.yaml ]]; then
                 names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')
             fi
-            COMPREPLY=( $(compgen -W "$names" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--local $names" -- "$cur") )
             return 0
             ;;
-        last)
-            local names=""
-            if [[ -f ~/.config/goback/config.yaml ]]; then
-                names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')
-            fi
-            if [[ "$cur" == -* ]]; then
-                COMPREPLY=( $(compgen -W "--epoch -e" -- "$cur") )
-            else
-                COMPREPLY=( $(compgen -W "$names --epoch -e" -- "$cur") )
-            fi
+        now)
+            COMPREPLY=( $(compgen -W "--local" -- "$cur") )
             return 0
             ;;
-        --epoch|-e)
+        clear|last)
             local names=""
             if [[ -f ~/.config/goback/config.yaml ]]; then
                 names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')

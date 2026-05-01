@@ -49,9 +49,9 @@ goback <command> [args]
 | `clear [name]` | Remove cached secrets from keychain (all if no name given) |
 | `completion <shell>` | Output shell completion script (`bash`, `zsh`) |
 | `daemon` | Run the backup scheduler in foreground with missed backup catchup |
-| `run [name]` | Manually trigger one or all backups |
-| `now` | Run all backups immediately |
-| `dry-run [name]` | Simulate backups — connect but don't transfer |
+| `run [--local] [name]` | Manually trigger one or all backups. Default delegates to the daemon over `~/.config/goback/control.sock`; `--local` runs in-process |
+| `now [--local]` | Run all backups immediately. `--local` has the same meaning as on `run` |
+| `dry-run [--local] [name]` | Simulate backups — connect but don't transfer. `--local` has the same meaning as on `run` |
 | `list` | Show configured backup jobs |
 | `status` | Show recent backup history |
 | `last <name> [--epoch\|-e]` | Print timestamp of last successful backup (RFC 3339 by default; `--epoch` for Unix seconds, shell-script friendly) |
@@ -234,7 +234,13 @@ If `~/.ssh/known_hosts` doesn't exist, goback creates it (with `0o600` perms). R
 
 This lets the daemon run unattended without requiring 1Password to be unlocked. Run `goback auth` once after changing secrets, then start the daemon. Use `goback auth --clear` to remove all cached secrets.
 
-If scheduled (non-interactive) invocations of `goback run` start failing with `keychain store: Write permissions error` — typically after a macOS upgrade or when items were created by a different goback binary — run `make reauth-keychain` to clear and re-cache the items so the current binary is in the ACL. If goback is installed at more than one path, set `GOBACK_KEYCHAIN_TRUST=/path/to/other/goback` (colon-separated for multiple) when running `goback auth` so every invocation path is trusted.
+#### Why `goback run` delegates to the daemon
+
+`goback run`, `goback now`, and `goback dry-run` route through the daemon's control socket (`~/.config/goback/control.sock`) by default. The reason is keychain reachability: cron- and `launchctl`-spawned processes live in a launchd session that does not carry the user's GUI keychain access, so `security find-generic-password` returns "no such item" even when the secret is present and the ACL would allow it. The daemon, started at user login as a LaunchAgent, holds resolved secrets in memory and runs in the user's GUI session, so it can execute backups without re-reading the keychain on every invocation. `goback run` from a cron line therefore "just works" without needing to re-resolve secrets in cron's reduced session.
+
+`--local` opts out of delegation and runs the backup in-process. Use it when the daemon is not running (e.g., debugging the daemon itself) or when you want to test a specific binary's behavior. From cron and launchd, do not use `--local` — that's exactly the path that fails to read the keychain.
+
+If scheduled (non-interactive) invocations of `goback run --local` start failing with `keychain store: Write permissions error` — typically after a macOS upgrade or when items were created by a different goback binary — run `make reauth-keychain` to clear and re-cache the items so the current binary is in the ACL. If goback is installed at more than one path, set `GOBACK_KEYCHAIN_TRUST=/path/to/other/goback` (colon-separated for multiple) when running `goback auth` so every invocation path is trusted. With the default daemon-delegated path, this class of error no longer applies — the daemon owns the keychain interaction, not the cron-spawned client.
 
 ### Service Management
 

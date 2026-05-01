@@ -55,7 +55,15 @@ _goback() {
             ;;
         args)
             case $words[1] in
-                run|dry-run|clear|last)
+                run|dry-run)
+                    _arguments \
+                        '--local[Run in-process instead of delegating to the daemon]' \
+                        '*: :_goback_backup_names'
+                    ;;
+                now)
+                    _arguments '--local[Run in-process instead of delegating to the daemon]'
+                    ;;
+                clear|last)
                     _goback_backup_names
                     ;;
                 auth)
@@ -95,7 +103,19 @@ _goback() {
     fi
 
     case "$prev" in
-        run|dry-run|clear|last)
+        run|dry-run)
+            local names=""
+            if [[ -f ~/.config/goback/config.yaml ]]; then
+                names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')
+            fi
+            COMPREPLY=( $(compgen -W "--local $names" -- "$cur") )
+            return 0
+            ;;
+        now)
+            COMPREPLY=( $(compgen -W "--local" -- "$cur") )
+            return 0
+            ;;
+        clear|last)
             local names=""
             if [[ -f ~/.config/goback/config.yaml ]]; then
                 names=$(grep '^\s*- name:' ~/.config/goback/config.yaml | sed 's/.*name:\s*//')

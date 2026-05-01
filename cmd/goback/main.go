@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -13,6 +14,7 @@ import (
 
 	"github.com/msjurset/goback/internal/backup"
 	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/control"
 	"github.com/msjurset/goback/internal/credentials"
 	"github.com/msjurset/goback/internal/daemon"
 )
@@ -53,31 +55,40 @@ func main() {
 		return
 	}
 
-	cfg := loadConfig()
-	setupLogging(cfg.Storage.LogFile)
-
 	switch os.Args[1] {
 	case "daemon":
-		cmdDaemon(cfg)
+		cfg := loadConfig()
+		logFile := setupLogging(cfg.Storage.LogFile)
+		tee := control.NewLogTee()
+		// Append the tee to whatever setupLogging installed (stderr, or
+		// stderr+file). Subscribers register via tee.Add for the duration of
+		// a request and unregister on completion.
+		if logFile != nil {
+			log.SetOutput(io.MultiWriter(os.Stderr, logFile, tee))
+		} else {
+			log.SetOutput(io.MultiWriter(os.Stderr, tee))
+		}
+		cmdDaemon(cfg, tee)
 	case "run":
-		name := ""
-		if len(os.Args) > 2 {
-			name = os.Args[2]
-		}
-		cmdRun(cfg, name, false)
+		name, local := parseRunArgs(os.Args[2:])
+		dispatchRun(name, false, local)
 	case "now":
-		cmdRun(cfg, "", false)
+		_, local := parseRunArgs(os.Args[2:])
+		dispatchRun("", false, local)
 	case "dry-run":
-		name := ""
-		if len(os.Args) > 2 {
-			name = os.Args[2]
-		}
-		cmdRun(cfg, name, true)
+		name, local := parseRunArgs(os.Args[2:])
+		dispatchRun(name, true, local)
 	case "list":
+		cfg := loadConfig()
+		setupLogging(cfg.Storage.LogFile)
 		cmdList(cfg)
 	case "status":
+		cfg := loadConfig()
+		setupLogging(cfg.Storage.LogFile)
 		cmdStatus(cfg)
 	case "last":
+		cfg := loadConfig()
+		setupLogging(cfg.Storage.LogFile)
 		name := ""
 		epoch := false
 		for _, a := range os.Args[2:] {
@@ -97,6 +108,55 @@ func main() {
 	}
 }
 
+// parseRunArgs separates the --local flag from a positional backup name.
+// Unknown args are treated as the name (first one wins).
+func parseRunArgs(args []string) (name string, local bool) {
+	for _, a := range args {
+		switch a {
+		case "--local":
+			local = true
+		default:
+			if name == "" {
+				name = a
+			}
+		}
+	}
+	return
+}
+
+// dispatchRun is the entry point for run/now/dry-run. By default it routes
+// the request to the running daemon over its control socket — the daemon has
+// keychain access in the user's GUI session, which cron- and launchd-spawned
+// invocations of `goback run` do not. --local forces in-process execution
+// (used for debugging or when no daemon is running).
+func dispatchRun(name string, dryRun bool, local bool) {
+	if local {
+		cfg := loadConfig()
+		setupLogging(cfg.Storage.LogFile)
+		cmdRun(cfg, name, dryRun)
+		return
+	}
+
+	exit, err := control.Run(control.DefaultSocketPath(), control.Request{
+		Cmd:    "run",
+		Name:   name,
+		DryRun: dryRun,
+	}, os.Stderr)
+	if err != nil {
+		if errors.Is(err, control.ErrDaemonUnreachable) {
+			fmt.Fprintf(os.Stderr,
+				"goback: daemon control socket unreachable at %s\n"+
+					"  start the daemon: launchctl load ~/Library/LaunchAgents/com.goback.daemon.plist\n"+
+					"  or run in-process: goback run --local %s\n",
+				control.DefaultSocketPath(), name)
+			os.Exit(2)
+		}
+		fmt.Fprintf(os.Stderr, "goback: %v\n", err)
+		os.Exit(2)
+	}
+	os.Exit(exit)
+}
+
 func usage() {
 	fmt.Fprintf(os.Stderr, `Usage: goback <command> [args]
 
@@ -107,9 +167,16 @@ Commands:
   clear [name]      Remove cached secrets from keychain (all if no name given)
   completion <shell> Output shell completion script (bash, zsh)
   daemon            Run the backup scheduler (foreground)
-  run [name]        Manually trigger one or all backups
-  now               Run all backups immediately
+  run [name]        Manually trigger one or all backups (delegates to daemon)
+  now               Run all backups immediately (delegates to daemon)
   dry-run [name]    Simulate backups (connect but don't transfer)
+
+Flags for run/now/dry-run:
+  --local           Run in-process instead of delegating to the daemon.
+                    Use when the daemon isn't running or for debugging.
+                    From cron/launchd, omit this flag so the daemon (which
+                    has keychain access in the user GUI session) handles
+                    the run.
   list              Show configured backup jobs
   status            Show recent backup history
   last <name>       Print timestamp of last successful backup (RFC3339; use --epoch for Unix seconds)
@@ -128,20 +195,21 @@ func loadConfig() *config.Config {
 	return cfg
 }
 
-func setupLogging(logFile string) {
+func setupLogging(logFile string) *os.File {
 	if logFile == "" {
-		return
+		return nil
 	}
 	if err := os.MkdirAll(filepath.Dir(logFile), 0o755); err != nil {
 		log.Printf("warning: could not create log directory: %v", err)
-		return
+		return nil
 	}
 	f, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		log.Printf("warning: could not open log file: %v", err)
-		return
+		return nil
 	}
 	log.SetOutput(io.MultiWriter(os.Stderr, f))
+	return f
 }
 
 func cmdInit() {
@@ -266,8 +334,8 @@ func cmdClear(name string) {
 	}
 }
 
-func cmdDaemon(cfg *config.Config) {
-	if err := daemon.RunWithPath(cfg, config.DefaultPath()); err != nil {
+func cmdDaemon(cfg *config.Config, tee *control.LogTee) {
+	if err := daemon.RunWithPath(cfg, config.DefaultPath(), tee); err != nil {
 		log.Fatalf("daemon error: %v", err)
 	}
 }

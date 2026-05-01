@@ -31,13 +31,16 @@ _goback() {
             ;;
         args)
             case $words[1] in
-                run|dry-run|clear)
-                    _goback_backup_names
-                    ;;
-                last)
+                run|dry-run)
                     _arguments \
-                        '(--epoch -e)'{--epoch,-e}'[Print Unix epoch seconds instead of RFC 3339]' \
+                        '--local[Run in-process instead of delegating to the daemon]' \
                         '*: :_goback_backup_names'
+                    ;;
+                now)
+                    _arguments '--local[Run in-process instead of delegating to the daemon]'
+                    ;;
+                clear|last)
+                    _goback_backup_names
                     ;;
                 auth)
                     _arguments '--clear[Remove cached secrets from keychain]'

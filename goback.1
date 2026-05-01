@@ -74,20 +74,42 @@ monitors its own binary; when the binary is replaced (e.g., after
 \fBmake deploy\fR), the daemon exits so that launchd can restart it with
 the new version.
 .TP
-.B run \fR[\fIname\fR]
+.B run \fR[\fB--local\fR] [\fIname\fR]
 Manually trigger a backup. If
 .I name
 is provided, only that backup job runs. Otherwise, all configured jobs run.
+By default the request is delegated to the running daemon over its control
+socket
+.RB ( ~/.config/goback/control.sock );
+the daemon executes the backup using its in-memory resolved secrets and
+streams output back. This is what makes
+.B run
+work from cron and launchd contexts that lack access to the user's keychain.
+With
+.BR --local ,
+.B goback
+loads the config and resolves secrets in-process — useful for debugging or
+when the daemon is not running. If the daemon socket is unreachable
+.B goback
+exits non-zero with a hint pointing at
+.BR --local .
 .TP
-.B now
+.B now \fR[\fB--local\fR]
 Run all configured backups immediately, ignoring schedules. Equivalent to
 .BR "goback run" .
+The
+.B --local
+flag has the same meaning.
 .TP
-.B dry-run \fR[\fIname\fR]
+.B dry-run \fR[\fB--local\fR] [\fIname\fR]
 Simulate backups without transferring files. Connects to each target to
 verify connectivity and configuration. For SSH targets, checks that the
 remote file exists. For HA API targets, verifies authentication and lists
 existing backups on the server. Prints a summary table of results.
+The
+.B --local
+flag has the same meaning as on
+.BR run .
 .TP
 .B list
 Display a table of all configured backup jobs showing name, type, folder,

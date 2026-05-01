@@ -13,16 +13,17 @@ import (
 
 	"github.com/msjurset/goback/internal/catchup"
 	"github.com/msjurset/goback/internal/config"
+	"github.com/msjurset/goback/internal/control"
 	"github.com/msjurset/goback/internal/runlock"
 	"github.com/msjurset/goback/internal/scheduler"
 	"github.com/msjurset/goback/internal/storage"
 )
 
 func Run(cfg *config.Config) error {
-	return RunWithPath(cfg, config.DefaultPath())
+	return RunWithPath(cfg, config.DefaultPath(), control.NewLogTee())
 }
 
-func RunWithPath(cfg *config.Config, configPath string) error {
+func RunWithPath(cfg *config.Config, configPath string, tee *control.LogTee) error {
 	store := NewStorage(cfg)
 	coord := runlock.New()
 	sched := scheduler.New(store, coord)
@@ -39,8 +40,16 @@ func RunWithPath(cfg *config.Config, configPath string) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
+	// Control server lets `goback run` (typically invoked from cron or
+	// launchd contexts that lack keychain access) delegate execution to the
+	// daemon, which holds resolved secrets in memory.
+	ctrlSrv := control.NewServer(control.DefaultSocketPath(), cfg, store, coord, tee)
+	if err := ctrlSrv.Start(ctx); err != nil {
+		log.Printf("control server: %v (continuing without socket)", err)
+	}
+
 	// Watch config file for changes
-	go watchConfig(ctx, configPath, sched, store)
+	go watchConfig(ctx, configPath, sched, store, ctrlSrv)
 
 	// Watch binary for changes (let launchd restart us)
 	ctx, cancelBinary := watchBinary(ctx)
@@ -73,7 +82,7 @@ func NewStorage(cfg *config.Config) *storage.Manager {
 }
 
 // watchConfig monitors the config file for changes and rebuilds the scheduler.
-func watchConfig(ctx context.Context, configPath string, sched *scheduler.Scheduler, store *storage.Manager) {
+func watchConfig(ctx context.Context, configPath string, sched *scheduler.Scheduler, store *storage.Manager, ctrlSrv *control.Server) {
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {
 		log.Printf("config watcher: failed to create: %v", err)
@@ -110,7 +119,7 @@ func watchConfig(ctx context.Context, configPath string, sched *scheduler.Schedu
 				debounce.Stop()
 			}
 			debounce = time.AfterFunc(500*time.Millisecond, func() {
-				reloadConfig(configPath, sched, store)
+				reloadConfig(configPath, sched, store, ctrlSrv)
 			})
 		case err, ok := <-watcher.Errors:
 			if !ok {
@@ -122,7 +131,7 @@ func watchConfig(ctx context.Context, configPath string, sched *scheduler.Schedu
 }
 
 // reloadConfig loads the config and rebuilds the scheduler.
-func reloadConfig(configPath string, sched *scheduler.Scheduler, store *storage.Manager) {
+func reloadConfig(configPath string, sched *scheduler.Scheduler, store *storage.Manager, ctrlSrv *control.Server) {
 	log.Printf("config change detected, reloading...")
 
 	cfg, err := config.Load(configPath)
@@ -133,6 +142,9 @@ func reloadConfig(configPath string, sched *scheduler.Scheduler, store *storage.
 
 	// Rebuild scheduler with new config
 	sched.ReplaceAll(cfg.Backups)
+	if ctrlSrv != nil {
+		ctrlSrv.SetConfig(cfg)
+	}
 	log.Printf("config reloaded: %d backup jobs", len(cfg.Backups))
 }
 

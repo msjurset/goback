@@ -1,6 +1,7 @@
 package credentials
 
 import (
+	"bytes"
 	"encoding/hex"
 	"fmt"
 	"os"
@@ -59,10 +60,25 @@ func platformLoad(key string) (string, error) {
 		"-a", key,
 		"-w",
 	)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
 	out, err := cmd.Output()
 	if err != nil {
-		// Item not found is not an error — return empty string
-		return "", nil
+		// Distinguish "no such item" (a normal cache-miss outcome) from
+		// access errors like "User interaction is not allowed." which
+		// happen when called from cron's launchd session that lacks
+		// keychain access. Surfacing access errors is what lets the
+		// caller decide whether to fall back or fail loudly; the old
+		// blanket-empty-on-error behavior masked cron failures as
+		// "secret not cached, run auth again."
+		msg := strings.TrimSpace(stderr.String())
+		if strings.Contains(msg, "could not be found") {
+			return "", nil
+		}
+		if msg == "" {
+			return "", fmt.Errorf("keychain load: %w", err)
+		}
+		return "", fmt.Errorf("keychain load: %s: %w", msg, err)
 	}
 
 	result := strings.TrimSpace(string(out))
