@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
@@ -20,6 +21,31 @@ import (
 )
 
 var version = "dev"
+
+var (
+	ansiEscape  = "\xff"
+	colorReset  = ansiEscape + "\033[0m" + ansiEscape
+	colorRed    = ansiEscape + "\033[31m" + ansiEscape
+	colorGreen  = ansiEscape + "\033[32m" + ansiEscape
+	colorYellow = ansiEscape + "\033[33m" + ansiEscape
+	colorBold   = ansiEscape + "\033[1m" + ansiEscape
+)
+
+func init() {
+	if stat, err := os.Stdout.Stat(); err == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
+		disableColors()
+	} else if os.Getenv("NO_COLOR") != "" {
+		disableColors()
+	}
+}
+
+func disableColors() {
+	colorReset = ""
+	colorRed = ""
+	colorGreen = ""
+	colorYellow = ""
+	colorBold = ""
+}
 
 func main() {
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
@@ -70,14 +96,14 @@ func main() {
 		}
 		cmdDaemon(cfg, tee)
 	case "run":
-		name, local := parseRunArgs(os.Args[2:])
-		dispatchRun(name, false, local)
+		name, local, retries := parseRunArgs(os.Args[2:])
+		dispatchRun(name, false, local, retries)
 	case "now":
-		_, local := parseRunArgs(os.Args[2:])
-		dispatchRun("", false, local)
+		_, local, retries := parseRunArgs(os.Args[2:])
+		dispatchRun("", false, local, retries)
 	case "dry-run":
-		name, local := parseRunArgs(os.Args[2:])
-		dispatchRun(name, true, local)
+		name, local, retries := parseRunArgs(os.Args[2:])
+		dispatchRun(name, true, local, retries)
 	case "list":
 		cfg := loadConfig()
 		setupLogging(cfg.Storage.LogFile)
@@ -108,13 +134,29 @@ func main() {
 	}
 }
 
-// parseRunArgs separates the --local flag from a positional backup name.
-// Unknown args are treated as the name (first one wins).
-func parseRunArgs(args []string) (name string, local bool) {
+// parseRunArgs separates flags from a positional backup name. Supported
+// flags: --local, --retries N, --retries=N. Unknown args are treated as
+// the name (first one wins). Invalid --retries values are silently ignored
+// and fall back to 0 (= use the default single-attempt behavior).
+func parseRunArgs(args []string) (name string, local bool, retries int) {
+	expectRetries := false
 	for _, a := range args {
-		switch a {
-		case "--local":
+		if expectRetries {
+			if n, err := strconv.Atoi(a); err == nil {
+				retries = n
+			}
+			expectRetries = false
+			continue
+		}
+		switch {
+		case a == "--local":
 			local = true
+		case a == "--retries":
+			expectRetries = true
+		case strings.HasPrefix(a, "--retries="):
+			if n, err := strconv.Atoi(strings.TrimPrefix(a, "--retries=")); err == nil {
+				retries = n
+			}
 		default:
 			if name == "" {
 				name = a
@@ -128,19 +170,22 @@ func parseRunArgs(args []string) (name string, local bool) {
 // the request to the running daemon over its control socket — the daemon has
 // keychain access in the user's GUI session, which cron- and launchd-spawned
 // invocations of `goback run` do not. --local forces in-process execution
-// (used for debugging or when no daemon is running).
-func dispatchRun(name string, dryRun bool, local bool) {
+// (used for debugging or when no daemon is running). retries > 1 opts the
+// run into retry-with-backoff; default (0 or 1) preserves the historical
+// single-attempt behavior so unrelated callers don't change semantics.
+func dispatchRun(name string, dryRun bool, local bool, retries int) {
 	if local {
 		cfg := loadConfig()
 		setupLogging(cfg.Storage.LogFile)
-		cmdRun(cfg, name, dryRun)
+		cmdRun(cfg, name, dryRun, retries)
 		return
 	}
 
 	exit, err := control.Run(control.DefaultSocketPath(), control.Request{
-		Cmd:    "run",
-		Name:   name,
-		DryRun: dryRun,
+		Cmd:     "run",
+		Name:    name,
+		DryRun:  dryRun,
+		Retries: retries,
 	}, os.Stderr)
 	if err != nil {
 		if errors.Is(err, control.ErrDaemonUnreachable) {
@@ -182,6 +227,11 @@ Flags for run/now/dry-run:
                         From cron/launchd, omit this flag so the daemon (which
                         has keychain access in the user GUI session) handles
                         the run.
+  --retries N           Retry the backup up to N times with exponential
+                        backoff on transient failures (network blips,
+                        timeouts). Default 1 = single attempt. Use 3-5 for
+                        unattended/cron-driven calls where occasional
+                        flakiness shouldn't fail the whole job.
 
 Flags for last:
   --epoch, -e           Print Unix seconds instead of RFC 3339.
@@ -345,10 +395,16 @@ func cmdDaemon(cfg *config.Config, tee *control.LogTee) {
 	}
 }
 
-func cmdRun(cfg *config.Config, name string, dryRun bool) {
+func cmdRun(cfg *config.Config, name string, dryRun bool, retries int) {
 	store := daemon.NewStorage(cfg)
-	// Interactive runs go single-attempt; the daemon path is what wants retry.
-	opts := backup.Options{DryRun: dryRun, NoRetry: true}
+	// Default is single-attempt; --retries N opts the call into the same
+	// retry envelope the scheduled daemon path uses.
+	opts := backup.Options{DryRun: dryRun}
+	if retries > 1 {
+		opts.MaxAttempts = retries
+	} else {
+		opts.NoRetry = true
+	}
 
 	var targets []config.BackupConfig
 	if name == "" {
@@ -393,15 +449,17 @@ func cmdRun(cfg *config.Config, name string, dryRun bool) {
 
 	if dryRun {
 		fmt.Println()
-		fmt.Println("=== Dry Run Summary ===")
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-		fmt.Fprintln(w, "NAME\tTYPE\tSTATUS\tDETAIL")
+		fmt.Println(colorBold + "=== Dry Run Summary ===" + colorReset)
+		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.StripEscape)
+		fmt.Fprintf(w, "%sNAME\tTYPE\tSTATUS\tDETAIL%s\n", colorBold, colorReset)
 		for i, r := range results {
 			detail := ""
+			status := colorGreen + "OK" + colorReset
 			if r.err != nil {
 				detail = r.err.Error()
+				status = colorRed + "FAILED" + colorReset
 			}
-			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", targets[i].Name, targets[i].Type, r.status, detail)
+			fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", targets[i].Name, targets[i].Type, status, detail)
 		}
 		w.Flush()
 	}
@@ -415,8 +473,8 @@ func cmdRun(cfg *config.Config, name string, dryRun bool) {
 
 func cmdList(cfg *config.Config) {
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tTYPE\tFOLDER\tSCHEDULE\tRETENTION")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.StripEscape)
+	fmt.Fprintf(w, "%sNAME\tTYPE\tFOLDER\tSCHEDULE\tRETENTION%s\n", colorBold, colorReset)
 	for _, b := range cfg.Backups {
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%d\n", b.Name, b.Type, b.Folder, b.Schedule, b.Retention)
 	}
@@ -436,8 +494,8 @@ func cmdStatus(cfg *config.Config) {
 		return
 	}
 
-	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "NAME\tTIMESTAMP\tFILE\tSIZE\tSTATUS")
+	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', tabwriter.StripEscape)
+	fmt.Fprintf(w, "%sNAME\tTIMESTAMP\tFILE\tSIZE\tSTATUS%s\n", colorBold, colorReset)
 
 	// Show most recent first, limit to last 20
 	start := 0
@@ -446,9 +504,9 @@ func cmdStatus(cfg *config.Config) {
 	}
 	for i := len(sl.Records) - 1; i >= start; i-- {
 		r := sl.Records[i]
-		status := "ok"
+		status := colorGreen + "ok" + colorReset
 		if r.Error != "" {
-			status = "FAILED: " + r.Error
+			status = colorRed + "FAILED: " + r.Error + colorReset
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n",
 			r.Name,

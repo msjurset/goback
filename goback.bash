@@ -19,10 +19,10 @@ _goback() {
 
     case "$cmd" in
         run|dry-run)
-            COMPREPLY=( $(compgen -W "--local $names" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--local --retries $names" -- "$cur") )
             ;;
         now)
-            COMPREPLY=( $(compgen -W "--local" -- "$cur") )
+            COMPREPLY=( $(compgen -W "--local --retries" -- "$cur") )
             ;;
         clear)
             COMPREPLY=( $(compgen -W "$names" -- "$cur") )

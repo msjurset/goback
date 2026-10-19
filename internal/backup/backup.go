@@ -17,6 +17,10 @@ type Options struct {
 	// CLI commands (`goback run`, `goback now`) where retry would surprise
 	// the user; the daemon path always retries per the configured policy.
 	NoRetry bool
+	// MaxAttempts, when > 0, overrides retry.Default.MaxAttempts and any
+	// per-backup RetryMaxAttempts. Set by `goback run --retries N` to opt
+	// the CLI/control-socket path into retries. NoRetry still wins if set.
+	MaxAttempts int
 }
 
 // Result is what a Provider returns on a successful run. The fields are used
@@ -76,6 +80,9 @@ func Execute(ctx context.Context, cfg config.BackupConfig, store *storage.Manage
 	policy := retry.Default
 	if cfg.RetryMaxAttempts > 0 {
 		policy.MaxAttempts = cfg.RetryMaxAttempts
+	}
+	if opts.MaxAttempts > 0 {
+		policy.MaxAttempts = opts.MaxAttempts
 	}
 	if opts.NoRetry {
 		policy.MaxAttempts = 1

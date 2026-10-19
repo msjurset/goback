@@ -83,7 +83,7 @@ invocation exits non-zero rather than running a parallel scheduler that
 would race the first on storage and retention. A stale socket file left
 by a previously crashed daemon is detected via a probe and replaced.
 .TP
-.B run \fR[\fB--local\fR] [\fIname\fR]
+.B run \fR[\fB--local\fR] [\fB--retries\fR \fIN\fR] [\fIname\fR]
 Manually trigger a backup. If
 .I name
 is provided, only that backup job runs. Otherwise, all configured jobs run.
@@ -102,15 +102,27 @@ when the daemon is not running. If the daemon socket is unreachable
 .B goback
 exits non-zero with a hint pointing at
 .BR --local .
+With
+.BR --retries " " \fIN\fR,
+the run retries up to
+.I N
+times with exponential backoff on transient failures (network blips, dial
+errors, timeouts). Default is a single attempt to preserve the historical
+behavior of interactive use; pass
+.B --retries 3
+or higher for unattended/cron-driven calls where one flake shouldn't fail
+the job.
 .TP
-.B now \fR[\fB--local\fR]
+.B now \fR[\fB--local\fR] [\fB--retries\fR \fIN\fR]
 Run all configured backups immediately, ignoring schedules. Equivalent to
 .BR "goback run" .
 The
 .B --local
-flag has the same meaning.
+and
+.B --retries
+flags have the same meaning.
 .TP
-.B dry-run \fR[\fB--local\fR] [\fIname\fR]
+.B dry-run \fR[\fB--local\fR] [\fB--retries\fR \fIN\fR] [\fIname\fR]
 Simulate backups without transferring files. Connects to each target to
 verify connectivity and configuration. For SSH targets, checks that the
 remote file exists. For HA API targets, verifies authentication and lists
@@ -224,8 +236,10 @@ to disable retries. Interactive
 .B goback run
 and
 .B goback now
-always run a single attempt regardless of this setting. Each attempt is logged
-to status.json with an
+default to a single attempt regardless of this setting; pass
+.B --retries N
+to opt the call into retries (overrides this config value when set). Each
+attempt is logged to status.json with an
 .B attempt
 field.
 .TP

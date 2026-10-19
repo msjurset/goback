@@ -34,10 +34,13 @@ _goback() {
                 run|dry-run)
                     _arguments \
                         '--local[Run in-process instead of delegating to the daemon]' \
+                        '--retries[Retry up to N times with exponential backoff]:attempts' \
                         ':name:_goback_backup_names'
                     ;;
                 now)
-                    _arguments '--local[Run in-process instead of delegating to the daemon]'
+                    _arguments \
+                        '--local[Run in-process instead of delegating to the daemon]' \
+                        '--retries[Retry up to N times with exponential backoff]:attempts'
                     ;;
                 clear)
                     _goback_backup_names

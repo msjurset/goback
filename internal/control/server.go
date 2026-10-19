@@ -295,7 +295,12 @@ func (s *Server) runBackup(req Request, sink *connSink) {
 			continue
 		}
 
-		opts := backup.Options{DryRun: req.DryRun, NoRetry: true}
+		opts := backup.Options{DryRun: req.DryRun}
+		if req.Retries > 1 {
+			opts.MaxAttempts = req.Retries
+		} else {
+			opts.NoRetry = true
+		}
 		err := backup.Execute(ctx, t, s.store, opts)
 		release()
 		if err != nil {

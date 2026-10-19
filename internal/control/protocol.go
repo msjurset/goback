@@ -12,9 +12,10 @@ import (
 
 // Request is the single message a client sends after dialing the socket.
 type Request struct {
-	Cmd    string `json:"cmd"`              // "run" or "ping"
-	Name   string `json:"name,omitempty"`   // backup name for "run"; empty = all
-	DryRun bool   `json:"dry_run,omitempty"` // for "run"
+	Cmd     string `json:"cmd"`                // "run" or "ping"
+	Name    string `json:"name,omitempty"`     // backup name for "run"; empty = all
+	DryRun  bool   `json:"dry_run,omitempty"`  // for "run"
+	Retries int    `json:"retries,omitempty"`  // for "run": >1 enables retry with that many attempts (default 1 = NoRetry)
 }
 
 // Response is one of N messages the server streams back. A connection ends
